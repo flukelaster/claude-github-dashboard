@@ -19,12 +19,18 @@ export function readPref(): ThemePref {
 
 export function applyTheme(pref: ThemePref): Theme {
   const resolved: Theme = pref === "system" ? resolveSystem() : pref;
-  document.documentElement.dataset.theme = resolved;
-  document.documentElement.style.colorScheme = resolved;
+  const root = document.documentElement;
+  if (root.dataset.theme !== resolved) root.dataset.theme = resolved;
+  if (root.style.colorScheme !== resolved) root.style.colorScheme = resolved;
   return resolved;
 }
 
-/** Init before React paints — avoids FOUC. Call from <script> in index.html or main.tsx pre-render. */
+function writePref(next: ThemePref): void {
+  if (window.localStorage.getItem(STORAGE_KEY) !== next) {
+    window.localStorage.setItem(STORAGE_KEY, next);
+  }
+}
+
 export function initTheme(): void {
   applyTheme(readPref());
 }
@@ -38,12 +44,10 @@ export function useTheme(): {
   const [pref, setPrefState] = useState<ThemePref>(() => readPref());
   const [theme, setTheme] = useState<Theme>(() => (pref === "system" ? resolveSystem() : pref));
 
-  // Apply whenever pref changes
   useEffect(() => {
     setTheme(applyTheme(pref));
   }, [pref]);
 
-  // React to OS-level change when pref === "system"
   useEffect(() => {
     if (pref !== "system") return;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -53,15 +57,18 @@ export function useTheme(): {
   }, [pref]);
 
   const setPref = useCallback((p: ThemePref) => {
-    window.localStorage.setItem(STORAGE_KEY, p);
-    setPrefState(p);
+    writePref(p);
+    setPrefState((prev) => (prev === p ? prev : p));
   }, []);
 
   const toggle = useCallback(() => {
-    const next: Theme = theme === "dark" ? "light" : "dark";
-    window.localStorage.setItem(STORAGE_KEY, next);
-    setPrefState(next);
-  }, [theme]);
+    setPrefState((prev) => {
+      const current: Theme = prev === "system" ? resolveSystem() : prev;
+      const next: Theme = current === "dark" ? "light" : "dark";
+      writePref(next);
+      return next;
+    });
+  }, []);
 
   return { pref, theme, setPref, toggle };
 }

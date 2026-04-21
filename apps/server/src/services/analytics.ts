@@ -141,43 +141,30 @@ export async function getHeatmap(
   metric: "cost" | "commits" | "sessions"
 ): Promise<HeatmapCell[]> {
   const since = rangeStart(days);
-  let rows: { dow: number; hour: number; value: number }[] = [];
-  if (metric === "cost") {
-    rows = db.all<{ dow: number; hour: number; value: number }>(sql`
+  const QUERIES = {
+    cost: sql`
       SELECT
         CAST(strftime('%w', ts) AS INTEGER) AS dow,
         CAST(strftime('%H', ts) AS INTEGER) AS hour,
         COALESCE(SUM(cost_usd), 0) AS value
-      FROM messages
-      WHERE ts >= ${since}
-      GROUP BY dow, hour
-    `);
-  } else if (metric === "sessions") {
-    rows = db.all<{ dow: number; hour: number; value: number }>(sql`
+      FROM messages WHERE ts >= ${since} GROUP BY dow, hour`,
+    sessions: sql`
       SELECT
         CAST(strftime('%w', started_at) AS INTEGER) AS dow,
         CAST(strftime('%H', started_at) AS INTEGER) AS hour,
         COUNT(*) AS value
-      FROM sessions
-      WHERE started_at >= ${since}
-      GROUP BY dow, hour
-    `);
-  } else {
-    rows = db.all<{ dow: number; hour: number; value: number }>(sql`
+      FROM sessions WHERE started_at >= ${since} GROUP BY dow, hour`,
+    commits: sql`
       SELECT
         CAST(strftime('%w', authored_at) AS INTEGER) AS dow,
         CAST(strftime('%H', authored_at) AS INTEGER) AS hour,
         COUNT(*) AS value
-      FROM commits
-      WHERE authored_at >= ${since}
-      GROUP BY dow, hour
-    `);
-  }
+      FROM commits WHERE authored_at >= ${since} GROUP BY dow, hour`,
+  };
+  const rows = db.all<{ dow: number; hour: number; value: number }>(QUERIES[metric]);
 
   const cells = new Map<string, number>();
-  for (const r of rows) {
-    cells.set(`${r.dow}-${r.hour}`, r.value);
-  }
+  for (const r of rows) cells.set(`${r.dow}-${r.hour}`, r.value);
   const out: HeatmapCell[] = [];
   for (let d = 0; d < 7; d++) {
     for (let h = 0; h < 24; h++) {
@@ -264,16 +251,29 @@ export async function getRepos(): Promise<
       r.github_name AS githubName,
       r.default_branch AS defaultBranch,
       r.last_synced_at AS lastSyncedAt,
-      COALESCE((SELECT COUNT(*) FROM commits c WHERE c.repo_id = r.id), 0) AS commitCount,
-      COALESCE((SELECT SUM(additions + deletions) FROM commits c WHERE c.repo_id = r.id), 0) AS totalLoc,
-      COALESCE((SELECT SUM(additions) FROM commits c WHERE c.repo_id = r.id), 0) AS additions,
-      COALESCE((SELECT SUM(deletions) FROM commits c WHERE c.repo_id = r.id), 0) AS deletions,
-      COALESCE((SELECT SUM(additions) - SUM(deletions) FROM commits c WHERE c.repo_id = r.id), 0) AS netLoc,
-      COALESCE((SELECT COUNT(*) FROM commits c WHERE c.repo_id = r.id AND c.is_ai_assisted = 1), 0) AS aiAssistedCount,
-      COALESCE((SELECT SUM(additions) FROM commits c WHERE c.repo_id = r.id AND c.is_ai_assisted = 1), 0) AS aiAdditions,
-      COALESCE((SELECT SUM(deletions) FROM commits c WHERE c.repo_id = r.id AND c.is_ai_assisted = 1), 0) AS aiDeletions,
+      COALESCE(c.commit_count, 0) AS commitCount,
+      COALESCE(c.total_loc, 0) AS totalLoc,
+      COALESCE(c.adds, 0) AS additions,
+      COALESCE(c.dels, 0) AS deletions,
+      COALESCE(c.adds - c.dels, 0) AS netLoc,
+      COALESCE(c.ai_count, 0) AS aiAssistedCount,
+      COALESCE(c.ai_adds, 0) AS aiAdditions,
+      COALESCE(c.ai_dels, 0) AS aiDeletions,
       NULL AS avgCostPerCommit
     FROM repos r
+    LEFT JOIN (
+      SELECT
+        repo_id,
+        COUNT(*) AS commit_count,
+        SUM(additions + deletions) AS total_loc,
+        SUM(additions) AS adds,
+        SUM(deletions) AS dels,
+        SUM(CASE WHEN is_ai_assisted = 1 THEN 1 ELSE 0 END) AS ai_count,
+        SUM(CASE WHEN is_ai_assisted = 1 THEN additions ELSE 0 END) AS ai_adds,
+        SUM(CASE WHEN is_ai_assisted = 1 THEN deletions ELSE 0 END) AS ai_dels
+      FROM commits
+      GROUP BY repo_id
+    ) c ON c.repo_id = r.id
     WHERE r.opted_out = 0
     ORDER BY r.local_path
   `);
@@ -359,7 +359,7 @@ export async function getRepoDetail(id: number, days: number): Promise<
       }>(sql`
         SELECT commit_sha, session_id, score, confidence
         FROM session_commit_links
-        WHERE repo_id = ${id}
+        WHERE repo_id = ${id} AND commit_sha IN ${shas}
       `)
     : [];
   const linksBySha = new Map<string, typeof links>();
@@ -388,12 +388,10 @@ export async function getRepoDetail(id: number, days: number): Promise<
     LIMIT 100
   `);
 
-  const totals = db.all<{ adds: number; dels: number; count: number }>(sql`
-    SELECT COALESCE(SUM(additions),0) AS adds, COALESCE(SUM(deletions),0) AS dels, COUNT(*) AS count
-    FROM commits WHERE repo_id = ${id}
-  `)[0] ?? { adds: 0, dels: 0, count: 0 };
-
-  const windowRow = db.all<{
+  const aggRow = db.all<{
+    total_adds: number;
+    total_dels: number;
+    total_count: number;
     adds: number;
     dels: number;
     count: number;
@@ -402,14 +400,36 @@ export async function getRepoDetail(id: number, days: number): Promise<
     ai_count: number;
   }>(sql`
     SELECT
-      COALESCE(SUM(additions),0) AS adds,
-      COALESCE(SUM(deletions),0) AS dels,
-      COUNT(*) AS count,
-      COALESCE(SUM(CASE WHEN is_ai_assisted=1 THEN additions ELSE 0 END),0) AS ai_adds,
-      COALESCE(SUM(CASE WHEN is_ai_assisted=1 THEN deletions ELSE 0 END),0) AS ai_dels,
-      COALESCE(SUM(CASE WHEN is_ai_assisted=1 THEN 1 ELSE 0 END),0) AS ai_count
-    FROM commits WHERE repo_id = ${id} AND authored_at >= ${since}
-  `)[0] ?? { adds: 0, dels: 0, count: 0, ai_adds: 0, ai_dels: 0, ai_count: 0 };
+      COALESCE(SUM(additions),0) AS total_adds,
+      COALESCE(SUM(deletions),0) AS total_dels,
+      COUNT(*) AS total_count,
+      COALESCE(SUM(CASE WHEN authored_at >= ${since} THEN additions ELSE 0 END),0) AS adds,
+      COALESCE(SUM(CASE WHEN authored_at >= ${since} THEN deletions ELSE 0 END),0) AS dels,
+      COALESCE(SUM(CASE WHEN authored_at >= ${since} THEN 1 ELSE 0 END),0) AS count,
+      COALESCE(SUM(CASE WHEN authored_at >= ${since} AND is_ai_assisted=1 THEN additions ELSE 0 END),0) AS ai_adds,
+      COALESCE(SUM(CASE WHEN authored_at >= ${since} AND is_ai_assisted=1 THEN deletions ELSE 0 END),0) AS ai_dels,
+      COALESCE(SUM(CASE WHEN authored_at >= ${since} AND is_ai_assisted=1 THEN 1 ELSE 0 END),0) AS ai_count
+    FROM commits WHERE repo_id = ${id}
+  `)[0] ?? {
+    total_adds: 0,
+    total_dels: 0,
+    total_count: 0,
+    adds: 0,
+    dels: 0,
+    count: 0,
+    ai_adds: 0,
+    ai_dels: 0,
+    ai_count: 0,
+  };
+  const totals = { adds: aggRow.total_adds, dels: aggRow.total_dels, count: aggRow.total_count };
+  const windowRow = {
+    adds: aggRow.adds,
+    dels: aggRow.dels,
+    count: aggRow.count,
+    ai_adds: aggRow.ai_adds,
+    ai_dels: aggRow.ai_dels,
+    ai_count: aggRow.ai_count,
+  };
 
   return {
     repo: {

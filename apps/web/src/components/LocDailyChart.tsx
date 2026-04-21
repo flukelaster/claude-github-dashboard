@@ -1,10 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
   ReferenceLine,
   ResponsiveContainer,
   Tooltip,
@@ -20,17 +19,27 @@ export default function LocDailyChart() {
   const q = useQuery({ queryKey: ["locDaily", range], queryFn: () => api.locDaily(range) });
   const data = q.data ?? [];
 
-  // Transform: deletions become negative so bars render below zero
-  const chartData = data.map((d) => ({
-    ...d,
-    deletionsNeg: -d.deletions,
-  }));
-
-  const totalAdds = data.reduce((s, d) => s + d.additions, 0);
-  const totalDels = data.reduce((s, d) => s + d.deletions, 0);
-  const net = totalAdds - totalDels;
-  const peakDay = data.reduce((m, d) => (d.additions + d.deletions > m.adds + m.dels ? { date: d.date, adds: d.additions, dels: d.deletions } : m), { date: "—", adds: 0, dels: 0 });
-  const activeDays = data.filter((d) => d.commitCount > 0).length;
+  const { chartData, totals, peakDay, activeDays } = useMemo(() => {
+    let totalAdds = 0;
+    let totalDels = 0;
+    let active = 0;
+    let peak = { date: "—", adds: 0, dels: 0 };
+    const mapped = data.map((d) => {
+      totalAdds += d.additions;
+      totalDels += d.deletions;
+      if (d.commitCount > 0) active++;
+      if (d.additions + d.deletions > peak.adds + peak.dels) {
+        peak = { date: d.date, adds: d.additions, dels: d.deletions };
+      }
+      return { ...d, deletionsNeg: -d.deletions };
+    });
+    return {
+      chartData: mapped,
+      totals: { adds: totalAdds, dels: totalDels, net: totalAdds - totalDels },
+      peakDay: peak,
+      activeDays: active,
+    };
+  }, [data]);
 
   return (
     <section className="card p-5 mb-8">
@@ -46,12 +55,12 @@ export default function LocDailyChart() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <Mini label="added" value={`+${fmtNum(totalAdds)}`} color="var(--color-add)" />
-        <Mini label="removed" value={`−${fmtNum(totalDels)}`} color="var(--color-remove)" />
+        <Mini label="added" value={`+${fmtNum(totals.adds)}`} color="var(--color-add)" />
+        <Mini label="removed" value={`−${fmtNum(totals.dels)}`} color="var(--color-remove)" />
         <Mini
           label="net"
-          value={`${net >= 0 ? "+" : ""}${fmtNum(net)}`}
-          color={net >= 0 ? "var(--color-ink)" : "var(--color-remove)"}
+          value={`${totals.net >= 0 ? "+" : ""}${fmtNum(totals.net)}`}
+          color={totals.net >= 0 ? "var(--color-ink)" : "var(--color-remove)"}
         />
         <Mini label="active days" value={`${activeDays} / ${data.length}`} />
       </div>
@@ -88,16 +97,8 @@ export default function LocDailyChart() {
                 />
               }
             />
-            <Bar dataKey="additions" name="additions" fill="var(--color-add)" radius={[3, 3, 0, 0]}>
-              {chartData.map((d) => (
-                <Cell key={d.date} fill="var(--color-add)" />
-              ))}
-            </Bar>
-            <Bar dataKey="deletionsNeg" name="deletions" fill="var(--color-remove)" radius={[0, 0, 3, 3]}>
-              {chartData.map((d) => (
-                <Cell key={d.date} fill="var(--color-remove)" />
-              ))}
-            </Bar>
+            <Bar dataKey="additions" name="additions" fill="var(--color-add)" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="deletionsNeg" name="deletions" fill="var(--color-remove)" radius={[0, 0, 3, 3]} />
           </BarChart>
         </ResponsiveContainer>
       </div>

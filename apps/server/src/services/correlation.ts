@@ -13,13 +13,14 @@ const CONFIDENCE_HIGH = 70;
 const CONFIDENCE_MEDIUM = 40;
 const SCORE_THRESHOLD = CONFIDENCE_MEDIUM;
 
-interface SessionCandidate {
+interface SessionRow {
   id: string;
   projectPath: string;
   startedAt: string;
-  endedAt: string;
+  endedAtMs: number;
   gitBranch: string | null;
   editedFiles: Set<string>;
+  editedBasenames: Set<string>;
 }
 
 function timeProximityScore(sessionLastMs: number, commitMs: number): number {
@@ -31,73 +32,23 @@ function timeProximityScore(sessionLastMs: number, commitMs: number): number {
   return 0;
 }
 
-function fileOverlapRatio(sessionFiles: Set<string>, commitFiles: string[]): number {
-  if (commitFiles.length === 0 || sessionFiles.size === 0) return 0;
-  let hits = 0;
-  for (const f of commitFiles) {
-    if (sessionFiles.has(f)) hits++;
-    else {
-      // match by basename fallback
-      const base = f.split(/[\\/]+/).pop();
-      if (base) {
-        for (const s of sessionFiles) {
-          if (s.endsWith("/" + base) || s.endsWith("\\" + base) || s === base) {
-            hits++;
-            break;
-          }
-        }
-      }
-    }
-  }
-  return hits / commitFiles.length;
+function basename(p: string): string {
+  const idx = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+  return idx === -1 ? p : p.slice(idx + 1);
 }
 
-async function loadSessionCandidates(
-  repoPath: string,
-  commitIso: string
-): Promise<SessionCandidate[]> {
-  // Session must: cwd matches repo path, startedAt <= commit, endedAt >= commit - 2h
-  const commitMs = new Date(commitIso).getTime();
-  const windowStart = new Date(commitMs - 2 * 3600_000).toISOString();
-  const candidates = db.all<{
-    id: string;
-    project_path: string;
-    started_at: string;
-    ended_at: string;
-    git_branch: string | null;
-  }>(sql`
-    SELECT id, project_path, started_at, ended_at, git_branch
-    FROM sessions
-    WHERE project_path LIKE ${repoPath + "%"}
-      AND started_at <= ${commitIso}
-      AND ended_at >= ${windowStart}
-  `);
-
-  const result: SessionCandidate[] = [];
-  for (const c of candidates) {
-    const files = new Set<string>();
-    const msgRows = db.all<{ files_touched_json: string | null }>(sql`
-      SELECT files_touched_json FROM messages WHERE session_id = ${c.id} AND files_touched_json IS NOT NULL
-    `);
-    for (const m of msgRows) {
-      if (!m.files_touched_json) continue;
-      try {
-        const arr = JSON.parse(m.files_touched_json) as string[];
-        for (const f of arr) files.add(f);
-      } catch {
-        // skip
-      }
+function fileOverlapRatio(session: SessionRow, commitFiles: string[]): number {
+  if (commitFiles.length === 0 || session.editedFiles.size === 0) return 0;
+  let hits = 0;
+  for (const f of commitFiles) {
+    if (session.editedFiles.has(f)) {
+      hits++;
+      continue;
     }
-    result.push({
-      id: c.id,
-      projectPath: c.project_path,
-      startedAt: c.started_at,
-      endedAt: c.ended_at,
-      gitBranch: c.git_branch,
-      editedFiles: files,
-    });
+    const base = basename(f);
+    if (base && session.editedBasenames.has(base)) hits++;
   }
-  return result;
+  return hits / commitFiles.length;
 }
 
 export async function correlate(): Promise<CorrelationStats> {
@@ -109,39 +60,129 @@ export async function correlate(): Promise<CorrelationStats> {
     durationMs: 0,
   };
 
+  const sessionRows = db.all<{
+    id: string;
+    project_path: string;
+    started_at: string;
+    ended_at: string;
+    git_branch: string | null;
+  }>(sql`
+    SELECT id, project_path, started_at, ended_at, git_branch
+    FROM sessions
+    WHERE project_path IS NOT NULL AND project_path != ''
+  `);
+
+  const messageFiles = db.all<{ session_id: string; files_touched_json: string }>(sql`
+    SELECT session_id, files_touched_json
+    FROM messages
+    WHERE files_touched_json IS NOT NULL
+  `);
+  const filesBySession = new Map<string, { paths: Set<string>; basenames: Set<string> }>();
+  for (const row of messageFiles) {
+    try {
+      const arr = JSON.parse(row.files_touched_json) as string[];
+      let entry = filesBySession.get(row.session_id);
+      if (!entry) {
+        entry = { paths: new Set(), basenames: new Set() };
+        filesBySession.set(row.session_id, entry);
+      }
+      for (const f of arr) {
+        entry.paths.add(f);
+        const b = basename(f);
+        if (b) entry.basenames.add(b);
+      }
+    } catch {
+      // skip
+    }
+  }
+
+  const sessions: SessionRow[] = sessionRows.map((s) => {
+    const files = filesBySession.get(s.id);
+    return {
+      id: s.id,
+      projectPath: s.project_path,
+      startedAt: s.started_at,
+      endedAtMs: new Date(s.ended_at).getTime(),
+      gitBranch: s.git_branch,
+      editedFiles: files?.paths ?? new Set(),
+      editedBasenames: files?.basenames ?? new Set(),
+    };
+  });
+
+  const linkBatch: (typeof sessionCommitLinks.$inferInsert)[] = [];
+  const aiAssistedShasByRepo = new Map<number, string[]>();
+  const BATCH = 500;
+
+  async function flushLinks() {
+    if (linkBatch.length === 0) return;
+    await db
+      .insert(sessionCommitLinks)
+      .values(linkBatch)
+      .onConflictDoUpdate({
+        target: [
+          sessionCommitLinks.sessionId,
+          sessionCommitLinks.repoId,
+          sessionCommitLinks.commitSha,
+        ],
+        set: {
+          score: sql`excluded.score`,
+          confidence: sql`excluded.confidence`,
+          attributionRatio: sql`excluded.attribution_ratio`,
+          reasonJson: sql`excluded.reason_json`,
+        },
+      });
+    stats.linksCreated += linkBatch.length;
+    linkBatch.length = 0;
+  }
+
   const repoRows = await db.select().from(repos).all();
   for (const r of repoRows) {
+    const repoSessions = sessions.filter((s) =>
+      s.projectPath && s.projectPath.startsWith(r.localPath)
+    );
+    if (repoSessions.length === 0) continue;
+
     const repoCommits = await db
       .select()
       .from(commits)
       .where(eq(commits.repoId, r.id))
       .all();
 
+    const aiShas: string[] = [];
+
     for (const cmt of repoCommits) {
       stats.commitsProcessed++;
-      const candidates = await loadSessionCandidates(r.localPath, cmt.committedAt);
-      if (candidates.length === 0) continue;
+      const commitMs = new Date(cmt.committedAt).getTime();
+      const windowStart = commitMs - 2 * 3600_000;
+      const candidates = repoSessions.filter(
+        (s) =>
+          new Date(s.startedAt).getTime() <= commitMs && s.endedAtMs >= windowStart
+      );
+      if (candidates.length === 0) {
+        if (cmt.coAuthoredClaude) aiShas.push(cmt.sha);
+        continue;
+      }
 
       let filesChanged: string[] = [];
       try {
-        filesChanged = cmt.filesChangedJson ? (JSON.parse(cmt.filesChangedJson) as string[]) : [];
+        filesChanged = cmt.filesChangedJson
+          ? (JSON.parse(cmt.filesChangedJson) as string[])
+          : [];
       } catch {
         filesChanged = [];
       }
 
-      const commitMs = new Date(cmt.committedAt).getTime();
       let bestLinked = false;
 
       for (const s of candidates) {
-        const sessionLastMs = new Date(s.endedAt).getTime();
-        let score = 0;
         const reasons: Record<string, number> = {};
+        let score = 0;
 
         if (cmt.coAuthoredClaude) {
           score += 50;
           reasons.coAuthor = 50;
         }
-        const overlap = fileOverlapRatio(s.editedFiles, filesChanged);
+        const overlap = fileOverlapRatio(s, filesChanged);
         if (overlap >= 0.5) {
           score += 30;
           reasons.fileOverlap = 30;
@@ -149,49 +190,54 @@ export async function correlate(): Promise<CorrelationStats> {
           score += 15;
           reasons.partialFileOverlap = 15;
         }
-        const tp = timeProximityScore(sessionLastMs, commitMs);
-        score += tp;
-        if (tp > 0) reasons.timeProximity = tp;
+        const tp = timeProximityScore(s.endedAtMs, commitMs);
+        if (tp > 0) {
+          score += tp;
+          reasons.timeProximity = tp;
+        }
         if (s.gitBranch && cmt.branch && s.gitBranch === cmt.branch) {
           score += 5;
           reasons.branchMatch = 5;
         }
 
         if (score < SCORE_THRESHOLD) continue;
+
         const confidence = score >= CONFIDENCE_HIGH ? "high" : "medium";
         const attribution = Math.min(1, overlap > 0 ? overlap : 0.5);
 
-        await db
-          .insert(sessionCommitLinks)
-          .values({
-            sessionId: s.id,
-            repoId: r.id,
-            commitSha: cmt.sha,
-            score,
-            confidence,
-            attributionRatio: attribution,
-            reasonJson: JSON.stringify(reasons),
-          })
-          .onConflictDoUpdate({
-            target: [sessionCommitLinks.sessionId, sessionCommitLinks.repoId, sessionCommitLinks.commitSha],
-            set: {
-              score,
-              confidence,
-              attributionRatio: attribution,
-              reasonJson: JSON.stringify(reasons),
-            },
-          });
-        stats.linksCreated++;
-        bestLinked = bestLinked || confidence === "high" || (confidence === "medium" && overlap >= 0.5);
+        linkBatch.push({
+          sessionId: s.id,
+          repoId: r.id,
+          commitSha: cmt.sha,
+          score,
+          confidence,
+          attributionRatio: attribution,
+          reasonJson: JSON.stringify(reasons),
+        });
+        if (linkBatch.length >= BATCH) await flushLinks();
+
+        bestLinked =
+          bestLinked ||
+          confidence === "high" ||
+          (confidence === "medium" && overlap >= 0.5);
       }
 
-      if (bestLinked || cmt.coAuthoredClaude) {
-        await db
-          .update(commits)
-          .set({ isAiAssisted: true })
-          .where(and(eq(commits.repoId, r.id), eq(commits.sha, cmt.sha)));
-        stats.aiAssistedMarked++;
-      }
+      if (bestLinked || cmt.coAuthoredClaude) aiShas.push(cmt.sha);
+    }
+
+    if (aiShas.length) aiAssistedShasByRepo.set(r.id, aiShas);
+  }
+
+  await flushLinks();
+
+  for (const [repoId, shas] of aiAssistedShasByRepo) {
+    for (let i = 0; i < shas.length; i += BATCH) {
+      const chunk = shas.slice(i, i + BATCH);
+      await db
+        .update(commits)
+        .set({ isAiAssisted: true })
+        .where(and(eq(commits.repoId, repoId), sql`${commits.sha} IN ${chunk}`));
+      stats.aiAssistedMarked += chunk.length;
     }
   }
 

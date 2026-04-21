@@ -17,9 +17,8 @@ import KpiCard from "../components/KpiCard";
 import RangePicker from "../components/RangePicker";
 import EmptyState from "../components/EmptyState";
 import { api, fmtCompact, fmtNum, fmtPct, fmtUsd } from "../lib/api";
+import { collectModels, modelColor } from "../lib/fmt";
 import { TooltipCard } from "../components/ChartTooltip";
-
-const MODEL_COLORS = ["#0070f3", "#7928ca", "#eb367f", "#ff5b4f", "#de1d8d", "#0a72ef"];
 
 export default function OverviewPage() {
   const [range, setRange] = useState("30d");
@@ -127,7 +126,7 @@ export default function OverviewPage() {
                         dataKey={(d) => d.byModel?.[m]?.costUsd ?? 0}
                         stackId="cost"
                         name={m}
-                        fill={MODEL_COLORS[i % MODEL_COLORS.length]}
+                        fill={modelColor(i)}
                         radius={i === models.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
                       />
                     ))}
@@ -181,14 +180,6 @@ export default function OverviewPage() {
       )}
     </div>
   );
-}
-
-function collectModels(data: { byModel: Record<string, unknown> }[]): string[] {
-  const s = new Set<string>();
-  for (const d of data) {
-    for (const m of Object.keys(d.byModel)) s.add(m);
-  }
-  return Array.from(s).sort();
 }
 
 function cumulate<T extends { date: string; costUsd: number }>(data: T[]) {

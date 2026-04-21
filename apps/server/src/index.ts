@@ -24,5 +24,7 @@ serve({ fetch: app.fetch, port }, (info) => {
   console.log(`[cgd/server] listening :${info.port}`);
 });
 
-// auto-sync on boot (non-blocking, silent on error)
-runFullSync().catch((e) => console.error("[cgd/server] initial sync failed:", e));
+// Auto-sync on boot (non-blocking). Disable via CGD_AUTO_SYNC=0 (e.g. during tests / hot-reload).
+if (process.env.CGD_AUTO_SYNC !== "0") {
+  runFullSync().catch((e) => console.error("[cgd/server] initial sync failed:", e));
+}

@@ -3,14 +3,9 @@ import { Link } from "react-router";
 import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/EmptyState";
 import LangIcon from "../components/LangIcon";
+import StatCard from "../components/StatCard";
 import { api, fmtPct } from "../lib/api";
-
-function fmtBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
+import { fmtBytes, shortenPath } from "../lib/fmt";
 
 export default function LanguagesPage() {
   const q = useQuery({ queryKey: ["languages"], queryFn: () => api.languages() });
@@ -49,10 +44,10 @@ export default function LanguagesPage() {
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
-        <Stat label="languages" value={String(data.languages.length)} />
-        <Stat label="total source" value={fmtBytes(data.totalBytes)} />
-        <Stat label="top language" value={data.languages[0]?.language ?? "—"} />
-        <Stat
+        <StatCard label="languages" value={String(data.languages.length)} />
+        <StatCard label="total source" value={fmtBytes(data.totalBytes)} />
+        <StatCard label="top language" value={data.languages[0]?.language ?? "—"} />
+        <StatCard
           label="top share"
           value={data.languages[0] ? fmtPct(data.languages[0].ratio) : "—"}
         />
@@ -121,7 +116,7 @@ export default function LanguagesPage() {
                     style={{ color: "var(--color-ink)" }}
                     title={r.localPath}
                   >
-                    {shorten(r.localPath)}
+                    {shortenPath(r.localPath)}
                   </span>
                 </div>
                 <div
@@ -171,27 +166,6 @@ export default function LanguagesPage() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="card-flat p-4">
-      <div className="mono-label mb-2" style={{ color: "var(--color-ink-muted)" }}>
-        {label}
-      </div>
-      <div
-        className="text-[22px] font-semibold truncate"
-        style={{
-          letterSpacing: "-0.88px",
-          fontVariantNumeric: "tabular-nums",
-          color: "var(--color-ink)",
-        }}
-        title={value}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
 function StackedBar({
   segments,
 }: {
@@ -217,10 +191,4 @@ function StackedBar({
       ))}
     </div>
   );
-}
-
-function shorten(p: string): string {
-  const parts = p.split(/[\\/]+/).filter(Boolean);
-  if (parts.length <= 2) return p;
-  return ".../" + parts.slice(-2).join("/");
 }

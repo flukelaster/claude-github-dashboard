@@ -1,21 +1,22 @@
 import type { ReactNode } from "react";
 
+type Accent = "develop" | "preview" | "ship" | null;
+
+const ACCENT_COLOR: Record<Exclude<Accent, null>, string> = {
+  develop: "var(--color-develop)",
+  preview: "var(--color-preview)",
+  ship: "var(--color-ship)",
+};
+
 interface Props {
   label: string;
   value: ReactNode;
   sub?: ReactNode;
-  accent?: "develop" | "preview" | "ship" | null;
+  accent?: Accent;
 }
 
 export default function KpiCard({ label, value, sub, accent = null }: Props) {
-  const color =
-    accent === "develop"
-      ? "var(--color-develop)"
-      : accent === "preview"
-      ? "var(--color-preview)"
-      : accent === "ship"
-      ? "var(--color-ship)"
-      : "var(--color-ink)";
+  const color = accent ? ACCENT_COLOR[accent] : "var(--color-ink)";
   return (
     <div className="card p-5 flex flex-col gap-3">
       <div className="mono-label" style={{ color: "var(--color-ink-muted)" }}>

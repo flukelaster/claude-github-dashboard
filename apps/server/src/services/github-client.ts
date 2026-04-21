@@ -1,6 +1,7 @@
 import { graphql } from "@octokit/graphql";
 import { and, eq } from "drizzle-orm";
 import { subDays } from "date-fns";
+import { hasClaudeCoAuthor } from "@cgd/shared";
 import { db } from "../db/client.js";
 import { commits, pullRequests, repoLanguages, repos } from "../db/schema.js";
 import { getSecret } from "./keychain.js";
@@ -15,7 +16,6 @@ export interface GitHubSyncStats {
   durationMs: number;
 }
 
-const CLAUDE_CO_AUTHOR_RE = /co-authored-by:[^\n]*(claude|anthropic)/i;
 
 interface PRNode {
   number: number;
@@ -196,7 +196,7 @@ export async function syncGitHub(opts: { sinceDays?: number } = {}): Promise<Git
         .execute();
       for (const node of cResult.nodes) {
         const message = `${node.messageHeadline}\n${node.messageBody ?? ""}`.trim();
-        const coClaude = CLAUDE_CO_AUTHOR_RE.test(message);
+        const coClaude = hasClaudeCoAuthor(message);
         await db
           .insert(commits)
           .values({

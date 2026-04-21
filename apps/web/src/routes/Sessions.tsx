@@ -2,7 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNowStrict } from "date-fns";
 import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/EmptyState";
+import { Th, Td } from "../components/Table";
 import { api, fmtCompact, fmtUsd } from "../lib/api";
+import { shortenPath } from "../lib/fmt";
 
 export default function SessionsPage() {
   const q = useQuery({ queryKey: ["sessions"], queryFn: () => api.sessions(100) });
@@ -37,7 +39,7 @@ export default function SessionsPage() {
               {data.map((s) => (
                 <tr
                   key={s.id}
-                  className="border-t hover:bg-[var(--color-surface-tint)] transition-colors"
+                  className="border-t hover:bg-surface-tint transition-colors"
                   style={{ borderColor: "var(--color-line)" }}
                 >
                   <Td mono title={s.startedAt}>
@@ -67,44 +69,5 @@ export default function SessionsPage() {
         </div>
       )}
     </div>
-  );
-}
-
-function shortenPath(p: string): string {
-  if (!p) return "—";
-  const parts = p.split(/[\\/]+/).filter(Boolean);
-  if (parts.length <= 2) return p;
-  return ".../" + parts.slice(-2).join("/");
-}
-
-function Th({ children, right = false }: { children: React.ReactNode; right?: boolean }) {
-  return (
-    <th
-      className={`px-4 py-2.5 font-mono uppercase text-[11px] ${right ? "text-right" : ""}`}
-      style={{ color: "var(--color-ink-muted)", fontWeight: 500 }}
-    >
-      {children}
-    </th>
-  );
-}
-function Td({
-  children,
-  right = false,
-  mono = false,
-  title,
-}: {
-  children: React.ReactNode;
-  right?: boolean;
-  mono?: boolean;
-  title?: string;
-}) {
-  return (
-    <td
-      className={`px-4 py-2.5 ${right ? "text-right" : ""} ${mono ? "font-mono" : ""}`}
-      style={{ color: "var(--color-ink)", fontVariantNumeric: "tabular-nums" }}
-      title={title}
-    >
-      {children}
-    </td>
   );
 }

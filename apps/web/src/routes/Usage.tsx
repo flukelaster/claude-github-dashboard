@@ -13,10 +13,11 @@ import {
 import PageHeader from "../components/PageHeader";
 import RangePicker from "../components/RangePicker";
 import EmptyState from "../components/EmptyState";
+import StatCard from "../components/StatCard";
+import { Th, Td } from "../components/Table";
 import { api, fmtCompact, fmtNum, fmtUsd } from "../lib/api";
+import { collectModels, modelColor } from "../lib/fmt";
 import { TooltipCard } from "../components/ChartTooltip";
-
-const MODEL_COLORS = ["#0070f3", "#7928ca", "#eb367f", "#ff5b4f", "#de1d8d", "#0a72ef"];
 
 export default function UsagePage() {
   const [range, setRange] = useState("30d");
@@ -42,11 +43,11 @@ export default function UsagePage() {
       />
 
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
-        <StatCell label="cost" value={fmtUsd(totalCost)} />
-        <StatCell label="input" value={fmtCompact(totalInput)} />
-        <StatCell label="output" value={fmtCompact(totalOutput)} />
-        <StatCell label="cache read" value={fmtCompact(totalCacheR)} />
-        <StatCell label="cache write" value={fmtCompact(totalCacheW)} />
+        <StatCard size="sm" label="cost" value={fmtUsd(totalCost)} />
+        <StatCard size="sm" label="input" value={fmtCompact(totalInput)} />
+        <StatCard size="sm" label="output" value={fmtCompact(totalOutput)} />
+        <StatCard size="sm" label="cache read" value={fmtCompact(totalCacheR)} />
+        <StatCard size="sm" label="cache write" value={fmtCompact(totalCacheW)} />
       </div>
 
       {empty ? (
@@ -84,7 +85,7 @@ export default function UsagePage() {
                       dataKey={(d) => d.byModel?.[m]?.costUsd ?? 0}
                       stackId="cost"
                       name={m}
-                      fill={MODEL_COLORS[i % MODEL_COLORS.length]}
+                      fill={modelColor(i)}
                       radius={i === models.length - 1 ? [3, 3, 0, 0] : [0, 0, 0, 0]}
                     />
                   ))}
@@ -123,53 +124,4 @@ export default function UsagePage() {
       )}
     </div>
   );
-}
-
-function StatCell({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="card-flat p-4">
-      <div className="mono-label mb-2" style={{ color: "var(--color-ink-muted)" }}>
-        {label}
-      </div>
-      <div className="text-[22px] font-semibold" style={{ letterSpacing: "-0.88px", fontVariantNumeric: "tabular-nums" }}>
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function Th({ children, right = false }: { children: React.ReactNode; right?: boolean }) {
-  return (
-    <th
-      className={`px-4 py-2.5 font-mono uppercase text-[11px] ${right ? "text-right" : ""}`}
-      style={{ color: "var(--color-ink-muted)", fontWeight: 500 }}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  right = false,
-  mono = false,
-}: {
-  children: React.ReactNode;
-  right?: boolean;
-  mono?: boolean;
-}) {
-  return (
-    <td
-      className={`px-4 py-2.5 ${right ? "text-right" : ""} ${mono ? "font-mono" : ""}`}
-      style={{ color: "var(--color-ink)", fontVariantNumeric: "tabular-nums" }}
-    >
-      {children}
-    </td>
-  );
-}
-
-function collectModels(data: { byModel: Record<string, unknown> }[]): string[] {
-  const s = new Set<string>();
-  for (const d of data) for (const m of Object.keys(d.byModel)) s.add(m);
-  return Array.from(s).sort();
 }

@@ -1,5 +1,17 @@
 export type ConfidenceTier = "high" | "medium" | "low";
 
+export const METRICS = ["cost", "commits", "sessions"] as const;
+export type Metric = (typeof METRICS)[number];
+
+export const CLAUDE_CO_AUTHOR_RE = /co-authored-by:[^\n]*?([^<\n]+)<([^>]+)>/gi;
+
+export function hasClaudeCoAuthor(message: string): boolean {
+  if (!message) return false;
+  const lower = message.toLowerCase();
+  if (!lower.includes("co-authored-by")) return false;
+  return /co-authored-by:[^\n]*(claude|anthropic)/i.test(message);
+}
+
 export interface SessionSummary {
   id: string;
   projectPath: string;

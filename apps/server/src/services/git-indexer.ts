@@ -3,11 +3,9 @@ import { resolve } from "node:path";
 import { subDays } from "date-fns";
 import { eq, sql } from "drizzle-orm";
 import simpleGit, { type SimpleGit } from "simple-git";
+import { hasClaudeCoAuthor } from "@cgd/shared";
 import { db } from "../db/client.js";
 import { commits, repos } from "../db/schema.js";
-
-const CO_AUTHOR_PATTERN = /Co-Authored-By:\s*([^<\n]+)<([^>]+)>/gi;
-const CLAUDE_CO_AUTHOR = /claude|anthropic/i;
 
 export interface GitIndexStats {
   reposDiscovered: number;
@@ -181,18 +179,6 @@ async function indexRepoCommits(
     .where(eq(repos.id, repoId));
 
   return count;
-}
-
-function hasClaudeCoAuthor(message: string): boolean {
-  if (!message.toLowerCase().includes("co-authored-by")) return false;
-  CO_AUTHOR_PATTERN.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = CO_AUTHOR_PATTERN.exec(message))) {
-    const name = m[1] ?? "";
-    const email = m[2] ?? "";
-    if (CLAUDE_CO_AUTHOR.test(name) || CLAUDE_CO_AUTHOR.test(email)) return true;
-  }
-  return false;
 }
 
 export async function syncGit(opts: { sinceDays?: number; skipCommits?: boolean } = {}): Promise<GitIndexStats> {

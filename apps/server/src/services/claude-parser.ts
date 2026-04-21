@@ -1,9 +1,9 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, statSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { ClaudeEventSchema, type ClaudeEvent, computeCost, resolveModel } from "@cgd/shared";
 import { db } from "../db/client.js";
 import { messages, sessions, syncState } from "../db/schema.js";
@@ -71,9 +71,14 @@ function extractFilePath(ev: ClaudeEvent): string | null {
 }
 
 async function listSessionFiles(): Promise<string[]> {
-  if (!existsSync(CLAUDE_PROJECTS_DIR)) return [];
   const out: string[] = [];
-  const projects = await readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
+  let projects;
+  try {
+    projects = await readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw e;
+  }
   for (const p of projects) {
     if (!p.isDirectory()) continue;
     const dir = resolve(CLAUDE_PROJECTS_DIR, p.name);
@@ -130,18 +135,21 @@ export async function syncClaude(): Promise<ParseStats> {
 
   const files = await listSessionFiles();
 
-  // Accumulate per-session aggregates in memory, flush at end. Merge with existing row values.
   const aggs = new Map<string, SessionAgg>();
-  const msgRows: (typeof messages.$inferInsert)[] = [];
+  let msgRows: (typeof messages.$inferInsert)[] = [];
 
-  // Load already-seen message UIDs to skip duplicates across files / resumes.
-  // Claude Code replays the same assistant messages when sessions are resumed or compacted;
-  // each replay has identical message.id. ccusage-parity requires deduping by that id.
+  // Claude Code replays the same assistant messages on session resume / compaction.
+  // Each replay carries the same message.id → dedupe by that.
+  // Within-run dedupe handled by this Set; cross-run dedupe by the INSERT OR IGNORE
+  // (unique index on message_uid) at the flush call.
   const seenUids = new Set<string>();
-  const existingUidRows = db.all<{ message_uid: string }>(
-    sql`SELECT DISTINCT message_uid FROM messages WHERE message_uid IS NOT NULL`
-  );
-  for (const r of existingUidRows) seenUids.add(r.message_uid);
+
+  const MSG_FLUSH = 100;
+  async function flushMessages() {
+    if (msgRows.length === 0) return;
+    await db.insert(messages).values(msgRows).onConflictDoNothing();
+    msgRows = [];
+  }
 
   for (const file of files) {
     stats.filesScanned++;
@@ -265,38 +273,42 @@ export async function syncClaude(): Promise<ParseStats> {
           costUsd: cost,
           filesTouchedJson: filePath ? JSON.stringify([filePath]) : null,
         });
+        if (msgRows.length >= MSG_FLUSH) await flushMessages();
       }
       stats.eventsIngested++;
     }
 
-    // Persist new offset
+    const nowIso = new Date().toISOString();
     await db
       .insert(syncState)
       .values({
         source: "claude_jsonl",
         key: file,
         byteOffset: nextOffset,
-        lastSyncedAt: new Date().toISOString(),
+        lastSyncedAt: nowIso,
       })
       .onConflictDoUpdate({
         target: [syncState.source, syncState.key],
-        set: { byteOffset: nextOffset, lastSyncedAt: new Date().toISOString() },
+        set: { byteOffset: nextOffset, lastSyncedAt: nowIso },
       });
+
   }
 
-  // Flush messages in batches
-  const BATCH = 500;
-  for (let i = 0; i < msgRows.length; i += BATCH) {
-    const slice = msgRows.slice(i, i + BATCH);
-    if (slice.length === 0) continue;
-    await db.insert(messages).values(slice).onConflictDoNothing();
-  }
+  await flushMessages();
 
-  // Merge aggs with existing session rows (handle incremental case)
-  for (const agg of aggs.values()) {
-    const existing = await db.select().from(sessions).where(eq(sessions.id, agg.id)).get();
-    const merged = existing
-      ? {
+  const aggIds = [...aggs.keys()];
+  if (aggIds.length > 0) {
+    const existingRows =
+      aggIds.length > 0
+        ? await db.select().from(sessions).where(inArray(sessions.id, aggIds)).all()
+        : [];
+    const existingById = new Map(existingRows.map((r) => [r.id, r]));
+
+    const merged: (typeof sessions.$inferInsert)[] = [];
+    for (const agg of aggs.values()) {
+      const existing = existingById.get(agg.id);
+      if (existing) {
+        merged.push({
           ...existing,
           projectPath: existing.projectPath || agg.projectPath,
           startedAt: existing.startedAt < agg.startedAt ? existing.startedAt : agg.startedAt,
@@ -310,8 +322,9 @@ export async function syncClaude(): Promise<ParseStats> {
           costUsd: existing.costUsd + agg.costUsd,
           primaryModel: existing.primaryModel ?? pickPrimaryModel(agg.modelCounts),
           gitBranch: existing.gitBranch ?? agg.gitBranch,
-        }
-      : {
+        });
+      } else {
+        merged.push({
           id: agg.id,
           projectPath: agg.projectPath,
           startedAt: agg.startedAt,
@@ -325,29 +338,33 @@ export async function syncClaude(): Promise<ParseStats> {
           costUsd: agg.costUsd,
           primaryModel: pickPrimaryModel(agg.modelCounts),
           gitBranch: agg.gitBranch,
-        };
+        });
+      }
+    }
 
-    await db
-      .insert(sessions)
-      .values(merged)
-      .onConflictDoUpdate({
-        target: sessions.id,
-        set: {
-          projectPath: merged.projectPath,
-          startedAt: merged.startedAt,
-          endedAt: merged.endedAt,
-          messageCount: merged.messageCount,
-          inputTokens: merged.inputTokens,
-          outputTokens: merged.outputTokens,
-          cacheReadTokens: merged.cacheReadTokens,
-          cacheWrite5mTokens: merged.cacheWrite5mTokens,
-          cacheWrite1hTokens: merged.cacheWrite1hTokens,
-          costUsd: merged.costUsd,
-          primaryModel: merged.primaryModel,
-          gitBranch: merged.gitBranch,
-        },
-      });
-    stats.sessionsUpserted++;
+    for (const row of merged) {
+      await db
+        .insert(sessions)
+        .values(row)
+        .onConflictDoUpdate({
+          target: sessions.id,
+          set: {
+            projectPath: row.projectPath,
+            startedAt: row.startedAt,
+            endedAt: row.endedAt,
+            messageCount: row.messageCount,
+            inputTokens: row.inputTokens,
+            outputTokens: row.outputTokens,
+            cacheReadTokens: row.cacheReadTokens,
+            cacheWrite5mTokens: row.cacheWrite5mTokens,
+            cacheWrite1hTokens: row.cacheWrite1hTokens,
+            costUsd: row.costUsd,
+            primaryModel: row.primaryModel,
+            gitBranch: row.gitBranch,
+          },
+        });
+    }
+    stats.sessionsUpserted = merged.length;
   }
 
   stats.durationMs = Date.now() - t0;

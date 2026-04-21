@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { METRICS, type Metric } from "@cgd/shared";
 import PageHeader from "../components/PageHeader";
 import RangePicker from "../components/RangePicker";
 import EmptyState from "../components/EmptyState";
 import { api, fmtNum, fmtUsd } from "../lib/api";
 
 const DOW_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-type Metric = "cost" | "sessions" | "commits";
 
 export default function HeatmapPage() {
   const [range, setRange] = useState("30d");
@@ -28,7 +28,7 @@ export default function HeatmapPage() {
         description="Day-of-week × hour. When does Claude spend concentrate?"
         actions={
           <div className="flex items-center gap-2">
-            <MetricToggle value={metric} onChange={setMetric} />
+            <RangePicker value={metric} onChange={setMetric} options={METRICS} />
             <RangePicker value={range} onChange={setRange} />
           </div>
         }
@@ -109,31 +109,6 @@ export default function HeatmapPage() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function MetricToggle({ value, onChange }: { value: Metric; onChange: (m: Metric) => void }) {
-  const opts: Metric[] = ["cost", "sessions", "commits"];
-  return (
-    <div className="card-flat inline-flex p-0.5">
-      {opts.map((o) => {
-        const active = o === value;
-        return (
-          <button
-            type="button"
-            key={o}
-            onClick={() => onChange(o)}
-            className="px-3 h-7 text-[13px] font-medium rounded-[4px] font-mono"
-            style={{
-              background: active ? "var(--color-ink)" : "transparent",
-              color: active ? "var(--color-surface)" : "var(--color-ink-soft)",
-            }}
-          >
-            {o}
-          </button>
-        );
-      })}
     </div>
   );
 }

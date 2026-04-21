@@ -100,31 +100,8 @@
     0 2px 4px rgba(0, 0, 0, 0.4);
 }
 
-/* =========================================================================
-   Theme — light (explicit, matches default — supports toggle back from dark)
-   ========================================================================= */
-:root[data-theme="light"] {
-  --color-ink: #171717;
-  --color-ink-soft: #4d4d4d;
-  --color-ink-muted: #666666;
-  --color-ink-placeholder: #808080;
-  --color-line: #ebebeb;
-  --color-line-strong: #d4d4d4;
-  --color-surface: #ffffff;
-  --color-surface-tint: #fafafa;
-  --color-surface-raised: #ffffff;
-  --color-hover: #f4f4f4;
-  --color-link: #0072f5;
-  --color-focus: hsla(212, 100%, 48%, 1);
-  --color-badge-bg: #ebf5ff;
-  --color-badge-text: #0068d6;
-  --color-add: #1a7f37;
-  --color-remove: #ff5b4f;
-  --shadow-ring: 0 0 0 1px rgba(0, 0, 0, 0.08);
-  --shadow-ring-light: 0 0 0 1px rgb(235, 235, 235);
-  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 2px rgba(0, 0, 0, 0.04), 0 8px 8px -8px rgba(0, 0, 0, 0.04), inset 0 0 0 1px #fafafa;
-  --shadow-subtle: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 2px rgba(0, 0, 0, 0.04);
-}
+/* Light is the default (defined in @theme). Setting data-theme="light" simply
+   stops matching the [data-theme="dark"] selector above, reverting to @theme. */
 
 /* =========================================================================
    Base resets

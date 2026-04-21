@@ -3,7 +3,10 @@ import { Link } from "react-router";
 import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/EmptyState";
 import LocDailyChart from "../components/LocDailyChart";
+import StatCard from "../components/StatCard";
+import { Th, Td } from "../components/Table";
 import { api, fmtNum, fmtPct } from "../lib/api";
+import { shortenPath } from "../lib/fmt";
 
 export default function ReposPage() {
   const q = useQuery({ queryKey: ["repos"], queryFn: () => api.repos() });
@@ -29,10 +32,10 @@ export default function ReposPage() {
       ) : (
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            <Stat label="repos" value={fmtNum(data.length)} />
-            <Stat label="added" value={`+${fmtNum(totalAdds)}`} color="var(--color-add)" />
-            <Stat label="removed" value={`−${fmtNum(totalDels)}`} color="var(--color-remove)" />
-            <Stat
+            <StatCard label="repos" value={fmtNum(data.length)} />
+            <StatCard label="added" value={`+${fmtNum(totalAdds)}`} color="var(--color-add)" />
+            <StatCard label="removed" value={`−${fmtNum(totalDels)}`} color="var(--color-remove)" />
+            <StatCard
               label="net loc"
               value={`${totalNet >= 0 ? "+" : ""}${fmtNum(totalNet)}`}
               color={totalNet >= 0 ? "var(--color-preview)" : "var(--color-remove)"}
@@ -61,12 +64,12 @@ export default function ReposPage() {
                   return (
                     <tr
                       key={r.id}
-                      className="border-t hover:bg-[var(--color-surface-tint)] transition-colors"
+                      className="border-t hover:bg-surface-tint transition-colors"
                       style={{ borderColor: "var(--color-line)" }}
                     >
                       <td className="px-4 py-2.5 font-mono text-[13px]">
                         <Link to={`/repos/${r.id}`} style={{ color: "var(--color-ink)", textDecoration: "none" }}>
-                          {shorten(r.localPath)}
+                          {shortenPath(r.localPath)}
                         </Link>
                       </td>
                       <td className="px-4 py-2.5">
@@ -98,59 +101,6 @@ export default function ReposPage() {
           </div>
         </>
       )}
-    </div>
-  );
-}
-
-function shorten(p: string): string {
-  // Cross-platform: accept both Unix and Windows path separators.
-  const parts = p.split(/[\\/]+/).filter(Boolean);
-  if (parts.length <= 2) return p;
-  return ".../" + parts.slice(-2).join("/");
-}
-
-function Th({ children, right = false }: { children: React.ReactNode; right?: boolean }) {
-  return (
-    <th
-      className={`px-4 py-2.5 font-mono uppercase text-[11px] ${right ? "text-right" : ""}`}
-      style={{ color: "var(--color-ink-muted)", fontWeight: 500 }}
-    >
-      {children}
-    </th>
-  );
-}
-
-function Td({
-  children,
-  right = false,
-  bold = false,
-  color,
-}: {
-  children: React.ReactNode;
-  right?: boolean;
-  bold?: boolean;
-  color?: string;
-}) {
-  return (
-    <td
-      className={`px-4 py-2.5 ${right ? "text-right" : ""} ${bold ? "font-semibold" : ""}`}
-      style={{ color: color ?? "var(--color-ink)", fontVariantNumeric: "tabular-nums" }}
-    >
-      {children}
-    </td>
-  );
-}
-
-function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
-  return (
-    <div className="card-flat p-4">
-      <div className="mono-label mb-2">{label}</div>
-      <div
-        className="text-[22px] font-semibold"
-        style={{ letterSpacing: "-0.88px", fontVariantNumeric: "tabular-nums", color: color ?? "var(--color-ink)" }}
-      >
-        {value}
-      </div>
     </div>
   );
 }

@@ -13,3 +13,5 @@ data/
 .vite
 .turbo
 coverage
+apps/web/tsconfig.app.tsbuildinfo
+apps/web/tsconfig.node.tsbuildinfo
