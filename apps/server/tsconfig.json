@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "declaration": false,
+    "noEmit": false,
+    "types": ["node"],
+    "paths": {
+      "@cgd/shared": ["../../packages/shared/src/index.ts"],
+      "@cgd/shared/*": ["../../packages/shared/src/*"]
+    }
+  },
+  "include": ["src/**/*", "../../packages/shared/src/**/*"]
+}

@@ -1,0 +1,360 @@
+@import "tailwindcss";
+
+/* =========================================================================
+   Vercel / Geist Design System tokens (Tailwind v4 @theme)
+   Reference: DESIGN.md
+   ========================================================================= */
+@theme {
+  /* Fonts */
+  --font-sans: "Geist", Arial, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "Roboto Mono", Menlo, Monaco, "Liberation Mono", "DejaVu Sans Mono", "Courier New";
+
+  /* Neutral scale — LIGHT (default) */
+  --color-ink: #171717;
+  --color-ink-soft: #4d4d4d;
+  --color-ink-muted: #666666;
+  --color-ink-placeholder: #808080;
+  --color-line: #ebebeb;
+  --color-line-strong: #d4d4d4;
+  --color-surface: #ffffff;
+  --color-surface-tint: #fafafa;
+  --color-surface-raised: #ffffff;
+  --color-hover: #f4f4f4;
+
+  /* Workflow accents (theme-invariant) */
+  --color-ship: #ff5b4f;
+  --color-preview: #de1d8d;
+  --color-develop: #0a72ef;
+
+  /* Semantic — additions / removals (git-style). Overridden in dark. */
+  --color-add: #1a7f37;
+  --color-remove: #ff5b4f;
+
+  /* Interactive */
+  --color-link: #0072f5;
+  --color-focus: hsla(212, 100%, 48%, 1);
+
+  /* Badges */
+  --color-badge-bg: #ebf5ff;
+  --color-badge-text: #0068d6;
+
+  /* Console palette (chart accents — theme-invariant) */
+  --color-console-blue: #0070f3;
+  --color-console-purple: #7928ca;
+  --color-console-pink: #eb367f;
+
+  /* Radii */
+  --radius-subtle: 4px;
+  --radius-standard: 6px;
+  --radius-card: 8px;
+  --radius-image: 12px;
+  --radius-pill: 9999px;
+
+  /* Shadow tokens (shadow-as-border) — overridden per theme in :root blocks below */
+  --shadow-ring: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  --shadow-ring-light: 0 0 0 1px rgb(235, 235, 235);
+  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 2px rgba(0, 0, 0, 0.04), 0 8px 8px -8px rgba(0, 0, 0, 0.04), inset 0 0 0 1px #fafafa;
+  --shadow-subtle: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* =========================================================================
+   Theme overrides — dark mode
+   Applied via <html data-theme="dark">
+   ========================================================================= */
+:root[data-theme="dark"] {
+  /* Neutral scale — DARK
+     Near-pure black with near-white text — Vercel parity. */
+  --color-ink: #ededed;
+  --color-ink-soft: #a3a3a3;
+  --color-ink-muted: #888888;
+  --color-ink-placeholder: #606060;
+  --color-line: #272727;
+  --color-line-strong: #3a3a3a;
+  --color-surface: #0a0a0a;
+  --color-surface-tint: #111111;
+  --color-surface-raised: #171717;
+  --color-hover: #1a1a1a;
+
+  /* Interactive — slightly lighter blues for dark contrast */
+  --color-link: #3291ff;
+  --color-focus: hsla(212, 100%, 62%, 1);
+
+  /* Semantic — additions / removals (brighter for dark contrast) */
+  --color-add: #3fb950;
+  --color-remove: #ff7b72;
+
+  /* Badges */
+  --color-badge-bg: rgba(10, 114, 239, 0.15);
+  --color-badge-text: #52a8ff;
+
+  /* Shadow system — inverted, lower opacity since dark surface can't pick up black shadows */
+  --shadow-ring: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  --shadow-ring-light: 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-card:
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 2px 4px rgba(0, 0, 0, 0.5),
+    0 8px 16px -8px rgba(0, 0, 0, 0.6),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+  --shadow-subtle:
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+/* =========================================================================
+   Theme — light (explicit, matches default — supports toggle back from dark)
+   ========================================================================= */
+:root[data-theme="light"] {
+  --color-ink: #171717;
+  --color-ink-soft: #4d4d4d;
+  --color-ink-muted: #666666;
+  --color-ink-placeholder: #808080;
+  --color-line: #ebebeb;
+  --color-line-strong: #d4d4d4;
+  --color-surface: #ffffff;
+  --color-surface-tint: #fafafa;
+  --color-surface-raised: #ffffff;
+  --color-hover: #f4f4f4;
+  --color-link: #0072f5;
+  --color-focus: hsla(212, 100%, 48%, 1);
+  --color-badge-bg: #ebf5ff;
+  --color-badge-text: #0068d6;
+  --color-add: #1a7f37;
+  --color-remove: #ff5b4f;
+  --shadow-ring: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  --shadow-ring-light: 0 0 0 1px rgb(235, 235, 235);
+  --shadow-card: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 2px rgba(0, 0, 0, 0.04), 0 8px 8px -8px rgba(0, 0, 0, 0.04), inset 0 0 0 1px #fafafa;
+  --shadow-subtle: 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* =========================================================================
+   Base resets
+   ========================================================================= */
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    color: var(--color-ink);
+    background: var(--color-surface);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "liga";
+  }
+
+  body {
+    font-size: 16px;
+    line-height: 1.5;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  ::selection {
+    background: var(--color-ink);
+    color: var(--color-surface);
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--color-ink);
+    font-feature-settings: "liga";
+  }
+
+  code, pre, kbd, samp {
+    font-family: var(--font-mono);
+    font-feature-settings: "liga", "tnum";
+  }
+
+  a {
+    color: var(--color-link);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  a:hover {
+    text-decoration: none;
+  }
+}
+
+/* =========================================================================
+   Component primitives
+   ========================================================================= */
+@layer components {
+  .ring-border {
+    box-shadow: var(--shadow-ring);
+  }
+
+  .ring-border-light {
+    box-shadow: var(--shadow-ring-light);
+  }
+
+  .card {
+    background: var(--color-surface);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
+  }
+
+  .card-flat {
+    background: var(--color-surface);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-ring);
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: var(--radius-standard);
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1;
+    letter-spacing: 0;
+    transition: background 120ms ease, color 120ms ease, box-shadow 120ms ease;
+    cursor: pointer;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  .btn-primary {
+    background: var(--color-ink);
+    color: var(--color-surface);
+  }
+  .btn-primary:hover { filter: brightness(0.85); }
+
+  .btn-secondary {
+    background: var(--color-surface);
+    color: var(--color-ink);
+    box-shadow: var(--shadow-ring-light);
+  }
+  .btn-secondary:hover {
+    background: var(--color-ink);
+    color: var(--color-surface);
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 10px;
+    border-radius: var(--radius-pill);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.33;
+    background: var(--color-badge-bg);
+    color: var(--color-badge-text);
+  }
+
+  .pill-ink {
+    background: var(--color-hover);
+    color: var(--color-ink);
+  }
+
+  .pill-ship { background: rgba(255, 91, 79, 0.1); color: var(--color-ship); }
+  .pill-preview { background: rgba(222, 29, 141, 0.1); color: var(--color-preview); }
+  .pill-develop { background: rgba(10, 114, 239, 0.1); color: var(--color-develop); }
+
+  .mono-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
+    text-transform: uppercase;
+    letter-spacing: 0;
+    color: var(--color-ink-soft);
+  }
+
+  .display-hero {
+    font-size: 48px;
+    font-weight: 600;
+    line-height: 1.04;
+    letter-spacing: -2.4px;
+    color: var(--color-ink);
+  }
+
+  .display-section {
+    font-size: 40px;
+    font-weight: 600;
+    line-height: 1.2;
+    letter-spacing: -2.4px;
+    color: var(--color-ink);
+  }
+
+  .display-sub {
+    font-size: 32px;
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -1.28px;
+    color: var(--color-ink);
+  }
+
+  .display-card {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.33;
+    letter-spacing: -0.96px;
+    color: var(--color-ink);
+  }
+
+  .metric {
+    font-size: 36px;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -1.44px;
+    color: var(--color-ink);
+    font-feature-settings: "tnum";
+  }
+
+  .body-lg {
+    font-size: 20px;
+    font-weight: 400;
+    line-height: 1.8;
+    color: var(--color-ink-soft);
+  }
+
+  .body {
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.5;
+    color: var(--color-ink-soft);
+  }
+
+  .body-sm {
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.43;
+    color: var(--color-ink-soft);
+  }
+
+  .nav-link {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--color-ink);
+    text-decoration: none;
+    padding: 6px 10px;
+    border-radius: var(--radius-standard);
+    transition: background 120ms ease;
+  }
+
+  .nav-link:hover { background: var(--color-hover); }
+
+  .nav-link-active {
+    background: var(--color-ink);
+    color: var(--color-surface);
+  }
+  .nav-link-active:hover { filter: brightness(0.85); }
+}
+
+/* =========================================================================
+   Recharts styling overrides
+   ========================================================================= */
+.recharts-cartesian-axis-tick text {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  fill: var(--color-ink-muted);
+}
+
+.recharts-tooltip-wrapper {
+  outline: none !important;
+}

@@ -1,0 +1,27 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1776781889910,
+      "tag": "0000_flowery_nico_minoru",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1776783231294,
+      "tag": "0001_mean_kylun",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1776786857193,
+      "tag": "0002_magenta_vindicator",
+      "breakpoints": true
+    }
+  ]
+}
