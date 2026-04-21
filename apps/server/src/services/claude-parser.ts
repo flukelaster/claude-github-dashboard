@@ -92,20 +92,29 @@ async function listSessionFiles(): Promise<string[]> {
   return out;
 }
 
+// Reject pathological / adversarial JSONL lines that would OOM the parser.
+// Claude Code events rarely exceed ~200 KB; 2 MB is a generous ceiling.
+const MAX_LINE_BYTES = 2 * 1024 * 1024;
+
 async function readIncrementally(
   filePath: string,
   fromOffset: number
-): Promise<{ lines: string[]; nextOffset: number }> {
+): Promise<{ lines: string[]; nextOffset: number; skippedOversized: number }> {
   const size = statSync(filePath).size;
-  if (fromOffset >= size) return { lines: [], nextOffset: size };
+  if (fromOffset >= size) return { lines: [], nextOffset: size, skippedOversized: 0 };
   return new Promise((res, rej) => {
     const stream = createReadStream(filePath, { start: fromOffset, encoding: "utf-8" });
     const rl = createInterface({ input: stream, crlfDelay: Infinity });
     const lines: string[] = [];
+    let skippedOversized = 0;
     rl.on("line", (line) => {
+      if (line.length > MAX_LINE_BYTES) {
+        skippedOversized++;
+        return;
+      }
       if (line.trim().length > 0) lines.push(line);
     });
-    rl.on("close", () => res({ lines, nextOffset: size }));
+    rl.on("close", () => res({ lines, nextOffset: size, skippedOversized }));
     rl.on("error", rej);
     stream.on("error", rej);
   });
@@ -159,7 +168,8 @@ export async function syncClaude(): Promise<ParseStats> {
       .where(and(eq(syncState.source, "claude_jsonl"), eq(syncState.key, file)))
       .get();
 
-    const { lines, nextOffset } = await readIncrementally(file, offsetRow?.byteOffset ?? 0);
+    const { lines, nextOffset, skippedOversized } = await readIncrementally(file, offsetRow?.byteOffset ?? 0);
+    stats.skippedLines += skippedOversized;
     if (lines.length === 0) {
       // still update timestamp
       if (!offsetRow) {

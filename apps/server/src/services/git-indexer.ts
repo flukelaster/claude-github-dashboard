@@ -1,5 +1,13 @@
 import { existsSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
+
+const HOME_ROOT = resolve(homedir());
+
+function isUnderHome(p: string): boolean {
+  const r = resolve(p);
+  return r === HOME_ROOT || r.startsWith(HOME_ROOT + "/") || r.startsWith(HOME_ROOT + "\\");
+}
 import { subDays } from "date-fns";
 import { eq, sql } from "drizzle-orm";
 import simpleGit, { type SimpleGit } from "simple-git";
@@ -18,11 +26,16 @@ function resolveGitRoot(path: string): string | null {
   if (!path) return null;
   if (!existsSync(path)) return null;
   let cur = resolve(path);
+  if (!isUnderHome(cur)) return null;
   while (true) {
+    if (!isUnderHome(cur)) return null;
     const gitDir = resolve(cur, ".git");
     if (existsSync(gitDir)) {
       const s = statSync(gitDir);
-      if (s.isDirectory() || s.isFile()) return cur;
+      if (s.isDirectory()) return cur;
+      // Reject `.git` gitfiles: they can redirect to an arbitrary gitdir
+      // (incl. one with hostile core.fsmonitor / core.sshCommand → RCE via git).
+      if (s.isFile()) return null;
     }
     const parent = resolve(cur, "..");
     if (parent === cur) return null;
@@ -97,6 +110,7 @@ async function indexRepoCommits(
       "log",
       `--since=${since}`,
       "--numstat",
+      "--max-count=5000",
       "--pretty=format:__COMMIT__%H|%an|%ae|%aI|%cn|%ce|%cI|%D|%B%n__END__",
       "--no-merges",
     ]);
@@ -122,7 +136,8 @@ async function indexRepoCommits(
     const [sha, an, ae, aI, cn, ce, cI, refs] = parts;
     const subject = parts.slice(8).join("|");
     if (!sha) continue;
-    const message = `${subject}\n${messageBody}`.trim();
+    const raw = `${subject}\n${messageBody}`.trim();
+    const message = raw.length > 64 * 1024 ? raw.slice(0, 64 * 1024) : raw;
 
     let additions = 0;
     let deletions = 0;

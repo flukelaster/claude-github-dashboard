@@ -1,5 +1,8 @@
-// Keytar wrapper with optional fallback to in-memory (if keytar native binding missing).
-// Phase-4 feature — we avoid crashing the app if keytar fails to load.
+// Keytar wrapper. On platforms where keytar's native binary is missing or a
+// secret-store backend (libsecret on Linux) is unavailable, we fall back to
+// in-memory storage so the app still runs — but we expose the backend state
+// via getBackend() so the UI can warn that secrets won't persist across
+// restarts.
 
 const SERVICE = "cgd.dashboard";
 
@@ -9,16 +12,21 @@ interface KeychainLike {
   deletePassword(service: string, account: string): Promise<boolean>;
 }
 
+export type KeychainBackend = "keytar" | "memory";
+
 let impl: KeychainLike | null = null;
+let backend: KeychainBackend = "keytar";
 
 async function load(): Promise<KeychainLike> {
   if (impl) return impl;
   try {
     const mod = await import("keytar");
     impl = mod.default ?? (mod as unknown as KeychainLike);
+    backend = "keytar";
     return impl;
   } catch {
     const store = new Map<string, string>();
+    backend = "memory";
     impl = {
       async getPassword(_s, a) {
         return store.get(a) ?? null;
@@ -47,4 +55,9 @@ export async function setSecret(account: string, value: string): Promise<void> {
 export async function deleteSecret(account: string): Promise<boolean> {
   const k = await load();
   return k.deletePassword(SERVICE, account);
+}
+
+export async function getBackend(): Promise<KeychainBackend> {
+  await load();
+  return backend;
 }

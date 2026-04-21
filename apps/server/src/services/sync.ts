@@ -1,4 +1,4 @@
-import type { SyncStatus } from "@cgd/shared";
+import { scrubSecrets, type SyncStatus } from "@cgd/shared";
 import { syncClaude } from "./claude-parser.js";
 import { syncGit } from "./git-indexer.js";
 import { hasGitHubToken, syncGitHub } from "./github-client.js";
@@ -24,7 +24,9 @@ let status: SyncStatus = {
 };
 
 function emit(evt: SyncEvent) {
-  for (const l of listeners) l(evt);
+  const safe =
+    evt.type === "error" ? { ...evt, message: scrubSecrets(evt.message) } : evt;
+  for (const l of listeners) l(safe);
 }
 
 export function subscribe(l: Listener): () => void {
@@ -150,7 +152,7 @@ export async function runFullSync(): Promise<SyncStatus> {
     running: false,
     source: null,
     lastRunAt: new Date().toISOString(),
-    lastError: errors.length ? errors.join(" | ") : null,
+    lastError: errors.length ? scrubSecrets(errors.join(" | ")) : null,
   };
   return getStatus();
 }

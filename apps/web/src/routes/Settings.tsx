@@ -54,6 +54,20 @@ export default function SettingsPage() {
             Required for GitHub sync (PRs, repo metadata). Scope: <span className="font-mono">repo</span>.
             Stored in OS keychain via <span className="font-mono">keytar</span>.
           </p>
+          {token.data?.backend === "memory" && (
+            <div
+              className="mb-4 px-3 py-2 rounded-[6px] text-[13px]"
+              style={{
+                background: "rgba(255, 91, 79, 0.1)",
+                boxShadow: "var(--shadow-ring)",
+                color: "var(--color-ship)",
+              }}
+            >
+              <strong>Warning:</strong> OS keychain unavailable — token will persist only for the current process.
+              Restart will clear it. On Linux install <span className="font-mono">libsecret-1-dev</span>;
+              on other platforms check <span className="font-mono">keytar</span> is built.
+            </div>
+          )}
 
           {token.data?.hasToken ? (
             <div className="flex items-center gap-3 flex-wrap">

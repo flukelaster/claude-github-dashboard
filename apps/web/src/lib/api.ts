@@ -9,7 +9,10 @@ import type {
 const BASE = "/api";
 
 async function j<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(BASE + path, { ...init, headers: { "Content-Type": "application/json" } });
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method === "POST" || method === "DELETE") headers["X-CGD-Local"] = "1";
+  const r = await fetch(BASE + path, { ...init, headers });
   if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
   return (await r.json()) as T;
 }
@@ -138,7 +141,10 @@ export const api = {
         languages: { language: string; color: string | null; bytes: number; ratio: number }[];
       }[];
     }>(`/languages`),
-  getGithubToken: () => j<{ hasToken: boolean; preview: string | null }>(`/settings/github/token`),
+  getGithubToken: () =>
+    j<{ hasToken: boolean; preview: string | null; backend: "keytar" | "memory" }>(
+      `/settings/github/token`
+    ),
   setGithubToken: (token: string) =>
     j<{ ok: boolean }>(`/settings/github/token`, {
       method: "POST",

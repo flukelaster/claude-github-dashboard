@@ -12,6 +12,23 @@ export function hasClaudeCoAuthor(message: string): boolean {
   return /co-authored-by:[^\n]*(claude|anthropic)/i.test(message);
 }
 
+// Prevent a leaked token (ghp_…, github_pat_…) from reaching error fields,
+// SSE payloads, or any response body surfaced on /api/sync/status.
+const SECRET_PATTERNS: RegExp[] = [
+  /ghp_[A-Za-z0-9]{36,}/g,
+  /github_pat_[A-Za-z0-9_]{20,}/g,
+  /gho_[A-Za-z0-9]{36,}/g,
+  /ghu_[A-Za-z0-9]{36,}/g,
+  /ghs_[A-Za-z0-9]{36,}/g,
+  /ghr_[A-Za-z0-9]{36,}/g,
+];
+
+export function scrubSecrets(input: string): string {
+  let out = input;
+  for (const re of SECRET_PATTERNS) out = out.replace(re, "[REDACTED]");
+  return out;
+}
+
 export interface SessionSummary {
   id: string;
   projectPath: string;

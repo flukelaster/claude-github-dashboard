@@ -1,7 +1,7 @@
 import { graphql } from "@octokit/graphql";
 import { and, eq } from "drizzle-orm";
 import { subDays } from "date-fns";
-import { hasClaudeCoAuthor } from "@cgd/shared";
+import { hasClaudeCoAuthor, scrubSecrets } from "@cgd/shared";
 import { db } from "../db/client.js";
 import { commits, pullRequests, repoLanguages, repos } from "../db/schema.js";
 import { getSecret } from "./keychain.js";
@@ -83,6 +83,7 @@ async function fetchCommitsForRepo(
   notFound: boolean;
 }> {
   let cursor: string | null = null;
+  let prevCursor: string | null = null;
   const collected: Array<CommitNode & { branch: string | null }> = [];
   const sinceIso = since.toISOString();
   for (let page = 0; page < 50; page++) {
@@ -121,7 +122,12 @@ async function fetchCommitsForRepo(
       for (const node of history.nodes) collected.push({ ...node, branch });
 
       if (!history.pageInfo.hasNextPage) break;
-      cursor = history.pageInfo.endCursor;
+      const next = history.pageInfo.endCursor;
+      if (next === prevCursor || next === cursor) {
+        return { nodes: collected, error: "cursor stalled", notFound: false };
+      }
+      prevCursor = cursor;
+      cursor = next;
       if (resp.rateLimit.remaining < 50) {
         return { nodes: collected, error: "rate limit low — paused", notFound: false };
       }
@@ -195,7 +201,9 @@ export async function syncGitHub(opts: { sinceDays?: number } = {}): Promise<Git
         .where(and(eq(commits.repoId, r.id)))
         .execute();
       for (const node of cResult.nodes) {
-        const message = `${node.messageHeadline}\n${node.messageBody ?? ""}`.trim();
+        const rawMessage = `${node.messageHeadline}\n${node.messageBody ?? ""}`.trim();
+        const message =
+          rawMessage.length > 64 * 1024 ? rawMessage.slice(0, 64 * 1024) : rawMessage;
         const coClaude = hasClaudeCoAuthor(message);
         await db
           .insert(commits)
@@ -228,7 +236,7 @@ export async function syncGitHub(opts: { sinceDays?: number } = {}): Promise<Git
           });
         stats.commitsUpserted++;
       }
-      if (cResult.error) stats.errors.push(`${r.githubOwner}/${r.githubName} commits: ${cResult.error}`);
+      if (cResult.error) stats.errors.push(scrubSecrets(`${r.githubOwner}/${r.githubName} commits: ${cResult.error}`));
     }
 
     // Languages — lightweight single query, safe even if commits fetch failed.
@@ -261,7 +269,7 @@ export async function syncGitHub(opts: { sinceDays?: number } = {}): Promise<Git
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       if (!/Could not resolve to a Repository/i.test(msg)) {
-        stats.errors.push(`${r.githubOwner}/${r.githubName} langs: ${msg}`);
+        stats.errors.push(scrubSecrets(`${r.githubOwner}/${r.githubName} langs: ${msg}`));
       }
     }
 
@@ -330,7 +338,7 @@ export async function syncGitHub(opts: { sinceDays?: number } = {}): Promise<Git
       await db.update(repos).set({ lastSyncedAt: new Date().toISOString() }).where(eq(repos.id, r.id));
       stats.reposSynced++;
     } catch (e) {
-      stats.errors.push(`${r.githubOwner}/${r.githubName}: ${e instanceof Error ? e.message : String(e)}`);
+      stats.errors.push(scrubSecrets(`${r.githubOwner}/${r.githubName}: ${e instanceof Error ? e.message : String(e)}`));
     }
   }
 

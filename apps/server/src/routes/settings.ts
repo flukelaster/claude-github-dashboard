@@ -1,15 +1,28 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { deleteSecret, getSecret, setSecret } from "../services/keychain.js";
+import { deleteSecret, getBackend, getSecret, setSecret } from "../services/keychain.js";
 
 export const settingsRoutes = new Hono();
 
 settingsRoutes.get("/github/token", async (c) => {
   const t = await getSecret("github_pat");
-  return c.json({ hasToken: !!t, preview: t ? `${t.slice(0, 4)}…${t.slice(-4)}` : null });
+  const backend = await getBackend();
+  return c.json({
+    hasToken: !!t,
+    preview: t ? `…${t.slice(-4)}` : null,
+    backend,
+  });
 });
 
-const tokenInput = z.object({ token: z.string().min(10).max(200) });
+// Accept classic (ghp_…) and fine-grained (github_pat_…) tokens.
+const tokenInput = z.object({
+  token: z
+    .string()
+    .regex(
+      /^(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,255})$/,
+      "expected ghp_… (40 chars) or github_pat_…"
+    ),
+});
 
 settingsRoutes.post("/github/token", async (c) => {
   const body = await c.req.json().catch(() => ({}));

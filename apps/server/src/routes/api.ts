@@ -22,7 +22,14 @@ function parseDays(raw: string): number {
   const m = /^(\d+)d$/.exec(raw);
   if (!m) return 30;
   const n = Number(m[1]);
-  return Math.min(365, Math.max(1, isFinite(n) ? n : 30));
+  if (!Number.isFinite(n)) return 30;
+  return Math.min(365, Math.max(1, n));
+}
+
+function clampInt(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.floor(n)));
 }
 
 api.get("/overview", async (c) => {
@@ -56,8 +63,8 @@ api.get("/productivity", async (c) => {
 });
 
 api.get("/sessions", async (c) => {
-  const limit = Math.min(200, Math.max(1, Number(c.req.query("limit") ?? "50")));
-  const offset = Math.max(0, Number(c.req.query("offset") ?? "0"));
+  const limit = clampInt(c.req.query("limit"), 50, 1, 200);
+  const offset = clampInt(c.req.query("offset"), 0, 0, 1_000_000);
   return c.json(await getSessions({ limit, offset }));
 });
 
@@ -94,22 +101,41 @@ api.post("/sync", async (c) => {
 
 api.get("/sync/status", (c) => c.json(getStatus()));
 
+const SSE_MAX_STREAMS = 8;
+let activeStreams = 0;
+
 api.get("/sync/stream", (c) => {
+  if (activeStreams >= SSE_MAX_STREAMS) {
+    return c.json({ error: "too many concurrent streams" }, 503);
+  }
+  activeStreams++;
   return streamSSE(c, async (stream) => {
     const push = (evt: SyncEvent) =>
       stream.writeSSE({ event: evt.type, data: JSON.stringify(evt) });
-    await push({ type: "progress", source: "init", message: "connected" });
+    let alive = true;
     const unsub = subscribe((evt) => {
       void push(evt);
     });
-    let alive = true;
-    stream.onAbort(() => {
+    const cleanup = () => {
+      if (!alive) return;
       alive = false;
       unsub();
-    });
-    while (alive) {
-      await stream.sleep(15_000);
-      if (alive) await stream.writeSSE({ event: "ping", data: "keepalive" });
+      activeStreams = Math.max(0, activeStreams - 1);
+    };
+    stream.onAbort(cleanup);
+    try {
+      await push({ type: "progress", source: "init", message: "connected" });
+      while (alive) {
+        await stream.sleep(15_000);
+        if (!alive) break;
+        try {
+          await stream.writeSSE({ event: "ping", data: "keepalive" });
+        } catch {
+          break;
+        }
+      }
+    } finally {
+      cleanup();
     }
   });
 });
