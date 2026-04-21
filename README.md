@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/og-image.png" alt="Claude × GitHub Dashboard" width="100%" />
+</p>
+
 # Claude × GitHub Dashboard
 
 A local-only dashboard that cross-references **Claude Code usage** (tokens, cost, sessions) with **GitHub output** (lines of code, pull requests, commits, languages) to measure **output per Claude dollar** — the productivity signal behind the raw volume of tokens consumed.
