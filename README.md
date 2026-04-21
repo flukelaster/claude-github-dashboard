@@ -60,7 +60,7 @@ This dashboard joins the two signals and surfaces the numbers behind the intuiti
 | Bundler | [Vite 6](https://vitejs.dev) |
 | UI | React 19, [Tailwind v4](https://tailwindcss.com), [Recharts](https://recharts.org) |
 | Typography | Geist Sans / Geist Mono (served via Google Fonts) |
-| Design system | [Vercel / Geist](DESIGN.md) — shadow-as-border, OpenType ligatures, three-weight scale |
+| Design system | Vercel / Geist — shadow-as-border, OpenType ligatures, three-weight scale |
 | Language icons | [simple-icons](https://simpleicons.org) — 45+ languages mapped |
 | Data fetching | [TanStack Query](https://tanstack.com/query) |
 | Routing | [React Router v7](https://reactrouter.com) |
@@ -212,8 +212,6 @@ The dashboard is designed dark-first. The Vercel shadow-as-border system ports c
    - Threshold for a medium link is 40; high confidence is 70.
 5. **Analytics** queries the SQLite tables via Drizzle and exposes typed REST endpoints.
 
-See [implementation-plan.md](implementation-plan.md) for the complete specification.
-
 ---
 
 ## Project structure
@@ -284,8 +282,6 @@ performance-tracking/
 │           ├── types.ts
 │           └── index.ts
 ├── docs/screenshots/              Image assets referenced above
-├── DESIGN.md                      Vercel / Geist design specification
-├── implementation-plan.md         Original product specification
 ├── pnpm-workspace.yaml
 ├── tsconfig.base.json
 └── README.md
@@ -364,7 +360,7 @@ Path handling is cross-platform: both Unix `/` and Windows `\` separators are ac
 
 ## Credits
 
-- Design language — [Vercel Geist](https://vercel.com/font); see [DESIGN.md](DESIGN.md).
+- Design language — [Vercel Geist](https://vercel.com/font).
 - Language icons — [simple-icons](https://simpleicons.org) (CC0).
 - Language colours — [GitHub Linguist](https://github.com/github-linguist/linguist).
 - Pricing reference — [Anthropic pricing documentation](https://platform.claude.com/docs/en/docs/about-claude/pricing).
