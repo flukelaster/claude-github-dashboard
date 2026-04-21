@@ -151,6 +151,16 @@ export const api = {
       body: JSON.stringify({ token }),
     }),
   deleteGithubToken: () => j<{ ok: boolean }>(`/settings/github/token`, { method: "DELETE" }),
+  testGithubConnection: () =>
+    j<{
+      ok: boolean;
+      login?: string;
+      name?: string | null;
+      avatarUrl?: string;
+      profileUrl?: string;
+      rateLimit?: { remaining: number; limit: number; resetAt: string };
+      error?: string;
+    }>(`/settings/github/test`),
   sync: () => j<{ started: boolean; status: SyncStatus }>(`/sync`, { method: "POST" }),
   syncStatus: () => j<SyncStatus>(`/sync/status`),
 };
