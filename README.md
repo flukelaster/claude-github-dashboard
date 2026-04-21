@@ -169,6 +169,12 @@ Keychain-backed GitHub token management, sync state, last-run timestamp and erro
 
 ![Settings](docs/screenshots/11-settings.png)
 
+The sync orchestrator runs Claude JSONL → git → GitHub → correlation in sequence, with live progress via Server-Sent Events:
+
+<p align="center">
+  <img src="docs/screenshots/13-sync-sse.gif" alt="Sync in progress" width="720" />
+</p>
+
 ---
 
 ## Themes
@@ -179,45 +185,15 @@ The dashboard is designed dark-first. The Vercel shadow-as-border system ports c
 |:---:|:---:|
 | ![Overview dark](docs/screenshots/01-overview-dark.png) | ![Overview light](docs/screenshots/02-overview-light.png) |
 
+<p align="center">
+  <img src="docs/screenshots/12-theme-toggle.gif" alt="Theme toggle" width="720" />
+</p>
+
 ---
 
 ## Architecture
 
-```mermaid
-flowchart LR
-    subgraph Local["Your machine"]
-        JSONL["~/.claude/projects/*.jsonl"]
-        GIT["Local git repositories"]
-        SQLITE[("SQLite<br/>dashboard.db")]
-
-        subgraph Backend["Hono server :3001"]
-            PARSER[Claude JSONL parser]
-            GITCLI[simple-git wrapper]
-            GH[Octokit GraphQL client]
-            CORR[Correlation engine]
-            API[REST + SSE]
-        end
-
-        subgraph Frontend["Vite :5173"]
-            REACT[React + TanStack Query + Recharts]
-        end
-
-        KEYCHAIN[macOS Keychain<br/>GitHub PAT]
-    end
-
-    GITHUB[(GitHub API)]
-
-    JSONL --> PARSER
-    GIT --> GITCLI
-    PARSER --> SQLITE
-    GITCLI --> SQLITE
-    KEYCHAIN -.-> GH
-    GH <--> GITHUB
-    GH --> SQLITE
-    CORR --> SQLITE
-    SQLITE --> API
-    API <--> REACT
-```
+![Architecture](docs/screenshots/00-architecture.png)
 
 ### Data flow
 
