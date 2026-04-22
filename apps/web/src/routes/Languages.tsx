@@ -4,7 +4,7 @@ import PageHeader from "../components/PageHeader";
 import EmptyState from "../components/EmptyState";
 import LangIcon from "../components/LangIcon";
 import StatCard from "../components/StatCard";
-import { api, fmtPct } from "../lib/api";
+import { api, fmtCompact, fmtNum, fmtPct } from "../lib/api";
 import { fmtBytes, shortenPath } from "../lib/fmt";
 
 export default function LanguagesPage() {
@@ -40,16 +40,20 @@ export default function LanguagesPage() {
       <PageHeader
         eyebrow="languages"
         title="Languages"
-        description="Source code distribution across all indexed repos. Measured in bytes per GitHub Linguist — a weighted proxy for LOC."
+        description="Source code distribution across all indexed repos. Bytes from GitHub Linguist; lines counted from local working trees."
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-8">
         <StatCard label="languages" value={String(data.languages.length)} />
         <StatCard label="total source" value={fmtBytes(data.totalBytes)} />
-        <StatCard label="top language" value={data.languages[0]?.language ?? "—"} />
+        <StatCard label="total LOC" value={fmtCompact(data.totalLoc)} />
         <StatCard
-          label="top share"
-          value={data.languages[0] ? fmtPct(data.languages[0].ratio) : "—"}
+          label="top language"
+          value={
+            data.languages[0]
+              ? `${data.languages[0].language} · ${fmtPct(data.languages[0].ratio)}`
+              : "—"
+          }
         />
       </div>
 
@@ -79,6 +83,18 @@ export default function LanguagesPage() {
                 style={{ color: "var(--color-ink-muted)", minWidth: 64, textAlign: "right" }}
               >
                 {fmtBytes(l.bytes)}
+              </span>
+              <span
+                className="mono-label"
+                style={{
+                  color: "var(--color-ink-muted)",
+                  minWidth: 72,
+                  textAlign: "right",
+                  fontVariantNumeric: "tabular-nums",
+                }}
+                title="lines of code (local scan)"
+              >
+                {l.loc > 0 ? `${fmtNum(l.loc)} LOC` : "—"}
               </span>
               <span
                 className="font-mono text-[12px]"
@@ -124,6 +140,7 @@ export default function LanguagesPage() {
                   style={{ color: "var(--color-ink-muted)" }}
                 >
                   {r.githubOwner ? `${r.githubOwner}/${r.githubName}` : "local"} · {fmtBytes(r.totalBytes)}
+                  {r.totalLoc > 0 && ` · ${fmtCompact(r.totalLoc)} LOC`}
                 </div>
                 <StackedBar
                   segments={r.languages.map((l) => ({

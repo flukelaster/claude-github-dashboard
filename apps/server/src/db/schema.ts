@@ -145,6 +145,7 @@ export const repoLanguages = sqliteTable(
     repoId: integer("repo_id").notNull(),
     language: text("language").notNull(),
     bytes: integer("bytes").notNull().default(0),
+    locCount: integer("loc_count").notNull().default(0),
     color: text("color"),
   },
   (t) => [

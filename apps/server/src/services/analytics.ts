@@ -488,8 +488,10 @@ export interface LanguageBreakdown {
   language: string;
   color: string | null;
   bytes: number;
+  loc: number;
   ratio: number;
-  perRepo: { repoId: number; localPath: string; bytes: number }[];
+  locRatio: number;
+  perRepo: { repoId: number; localPath: string; bytes: number; loc: number }[];
 }
 
 export async function getLocDaily(days: number): Promise<
@@ -560,6 +562,7 @@ export async function getLocDaily(days: number): Promise<
 
 export async function getLanguages(): Promise<{
   totalBytes: number;
+  totalLoc: number;
   languages: LanguageBreakdown[];
   byRepo: {
     repoId: number;
@@ -567,29 +570,37 @@ export async function getLanguages(): Promise<{
     githubOwner: string | null;
     githubName: string | null;
     totalBytes: number;
-    languages: { language: string; color: string | null; bytes: number; ratio: number }[];
+    totalLoc: number;
+    languages: { language: string; color: string | null; bytes: number; loc: number; ratio: number; locRatio: number }[];
   }[];
 }> {
   const rows = db.all<{
     repo_id: number;
     language: string;
     bytes: number;
+    loc_count: number;
     color: string | null;
     local_path: string;
     github_owner: string | null;
     github_name: string | null;
   }>(sql`
-    SELECT rl.repo_id, rl.language, rl.bytes, rl.color,
+    SELECT rl.repo_id, rl.language, rl.bytes, rl.loc_count, rl.color,
            r.local_path, r.github_owner, r.github_name
     FROM repo_languages rl
     JOIN repos r ON r.id = rl.repo_id
-    WHERE r.opted_out = 0
-    ORDER BY rl.bytes DESC
+    WHERE r.opted_out = 0 AND (rl.bytes > 0 OR rl.loc_count > 0)
+    ORDER BY rl.bytes DESC, rl.loc_count DESC
   `);
 
   const aggregate = new Map<
     string,
-    { language: string; color: string | null; bytes: number; perRepo: Map<number, { localPath: string; bytes: number }> }
+    {
+      language: string;
+      color: string | null;
+      bytes: number;
+      loc: number;
+      perRepo: Map<number, { localPath: string; bytes: number; loc: number }>;
+    }
   >();
   const byRepo = new Map<
     number,
@@ -599,7 +610,8 @@ export async function getLanguages(): Promise<{
       githubOwner: string | null;
       githubName: string | null;
       totalBytes: number;
-      languages: { language: string; color: string | null; bytes: number; ratio: number }[];
+      totalLoc: number;
+      languages: { language: string; color: string | null; bytes: number; loc: number; ratio: number; locRatio: number }[];
     }
   >();
 
@@ -608,10 +620,12 @@ export async function getLanguages(): Promise<{
       language: r.language,
       color: r.color,
       bytes: 0,
+      loc: 0,
       perRepo: new Map(),
     };
     agg.bytes += r.bytes;
-    agg.perRepo.set(r.repo_id, { localPath: r.local_path, bytes: r.bytes });
+    agg.loc += r.loc_count;
+    agg.perRepo.set(r.repo_id, { localPath: r.local_path, bytes: r.bytes, loc: r.loc_count });
     aggregate.set(r.language, agg);
 
     const repo = byRepo.get(r.repo_id) ?? {
@@ -620,37 +634,53 @@ export async function getLanguages(): Promise<{
       githubOwner: r.github_owner,
       githubName: r.github_name,
       totalBytes: 0,
+      totalLoc: 0,
       languages: [],
     };
     repo.totalBytes += r.bytes;
-    repo.languages.push({ language: r.language, color: r.color, bytes: r.bytes, ratio: 0 });
+    repo.totalLoc += r.loc_count;
+    repo.languages.push({
+      language: r.language,
+      color: r.color,
+      bytes: r.bytes,
+      loc: r.loc_count,
+      ratio: 0,
+      locRatio: 0,
+    });
     byRepo.set(r.repo_id, repo);
   }
 
   const totalBytes = [...aggregate.values()].reduce((s, a) => s + a.bytes, 0);
+  const totalLoc = [...aggregate.values()].reduce((s, a) => s + a.loc, 0);
 
   const languages: LanguageBreakdown[] = [...aggregate.values()]
-    .sort((a, b) => b.bytes - a.bytes)
+    .sort((a, b) => b.bytes - a.bytes || b.loc - a.loc)
     .map((a) => ({
       language: a.language,
       color: a.color,
       bytes: a.bytes,
+      loc: a.loc,
       ratio: totalBytes > 0 ? a.bytes / totalBytes : 0,
+      locRatio: totalLoc > 0 ? a.loc / totalLoc : 0,
       perRepo: [...a.perRepo.entries()]
-        .map(([repoId, v]) => ({ repoId, localPath: v.localPath, bytes: v.bytes }))
-        .sort((x, y) => y.bytes - x.bytes),
+        .map(([repoId, v]) => ({ repoId, localPath: v.localPath, bytes: v.bytes, loc: v.loc }))
+        .sort((x, y) => y.bytes - x.bytes || y.loc - x.loc),
     }));
 
   const repoList = [...byRepo.values()]
     .map((r) => ({
       ...r,
       languages: r.languages
-        .map((l) => ({ ...l, ratio: r.totalBytes > 0 ? l.bytes / r.totalBytes : 0 }))
-        .sort((a, b) => b.bytes - a.bytes),
+        .map((l) => ({
+          ...l,
+          ratio: r.totalBytes > 0 ? l.bytes / r.totalBytes : 0,
+          locRatio: r.totalLoc > 0 ? l.loc / r.totalLoc : 0,
+        }))
+        .sort((a, b) => b.bytes - a.bytes || b.loc - a.loc),
     }))
-    .sort((a, b) => b.totalBytes - a.totalBytes);
+    .sort((a, b) => b.totalBytes - a.totalBytes || b.totalLoc - a.totalLoc);
 
-  return { totalBytes, languages, byRepo: repoList };
+  return { totalBytes, totalLoc, languages, byRepo: repoList };
 }
 
 export async function getProductivity(days: number): Promise<{

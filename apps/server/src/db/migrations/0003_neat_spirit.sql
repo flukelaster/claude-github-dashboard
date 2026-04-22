@@ -1,0 +1,1 @@
+ALTER TABLE `repo_languages` ADD `loc_count` integer DEFAULT 0 NOT NULL;

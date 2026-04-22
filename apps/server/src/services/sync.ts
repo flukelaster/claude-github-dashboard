@@ -2,6 +2,7 @@ import { scrubSecrets, type SyncStatus } from "@cgd/shared";
 import { syncClaude } from "./claude-parser.js";
 import { syncGit } from "./git-indexer.js";
 import { hasGitHubToken, syncGitHub } from "./github-client.js";
+import { syncLanguageLoc } from "./language-loc.js";
 import { correlate } from "./correlation.js";
 
 type Listener = (evt: SyncEvent) => void;
@@ -125,7 +126,30 @@ export async function runFullSync(): Promise<SyncStatus> {
     });
   }
 
-  // 4. Correlation
+  // 4. Language LOC — walk local filesystem, count lines per language.
+  //    Runs regardless of GitHub token since it's pure local scan.
+  try {
+    status.source = "language_loc";
+    emit({ type: "start", source: "language_loc", at: new Date().toISOString() });
+    const l = await syncLanguageLoc();
+    emit({
+      type: "done",
+      source: "language_loc",
+      at: new Date().toISOString(),
+      stats: {
+        reposScanned: l.reposScanned,
+        filesScanned: l.filesScanned,
+        totalLoc: l.totalLoc,
+        durationMs: l.durationMs,
+      },
+    });
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    errors.push(`language_loc: ${m}`);
+    emit({ type: "error", source: "language_loc", at: new Date().toISOString(), message: m });
+  }
+
+  // 5. Correlation
   try {
     status.source = "correlation";
     emit({ type: "start", source: "correlation", at: new Date().toISOString() });

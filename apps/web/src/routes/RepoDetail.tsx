@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+
+const COMMITS_PAGE = 50;
 import { Link, useParams } from "react-router";
 import { formatDistanceToNowStrict } from "date-fns";
 import PageHeader from "../components/PageHeader";
@@ -44,6 +46,7 @@ function NetStat({
 export default function RepoDetailPage() {
   const { id } = useParams();
   const [range, setRange] = useState("90d");
+  const [visibleCommits, setVisibleCommits] = useState(COMMITS_PAGE);
   const q = useQuery({
     queryKey: ["repo", id, range],
     queryFn: () => api.repoDetail(Number(id), range),
@@ -116,7 +119,7 @@ export default function RepoDetailPage() {
               </p>
             ) : (
               <ul className="flex flex-col gap-3">
-                {data.commits.map((c) => (
+                {data.commits.slice(0, visibleCommits).map((c) => (
                   <li
                     key={c.sha}
                     className="flex items-start gap-3 pb-3 border-b last:border-b-0"
@@ -141,8 +144,9 @@ export default function RepoDetailPage() {
                         {(c.message ?? "").split("\n")[0]}
                       </div>
                       <div className="flex items-center gap-2 mt-2 flex-wrap">
-                        <span className="body-sm font-mono" style={{ color: "var(--color-ink-muted)" }}>
-                          +{fmtNum(c.additions)} −{fmtNum(c.deletions)}
+                        <span className="body-sm font-mono flex items-center gap-2">
+                          <span style={{ color: "var(--color-add)" }}>+{fmtNum(c.additions)}</span>
+                          <span style={{ color: "var(--color-remove)" }}>−{fmtNum(c.deletions)}</span>
                         </span>
                         {c.coAuthoredClaude && <span className="pill pill-preview">Co-Authored-By: Claude</span>}
                         {c.isAiAssisted && !c.coAuthoredClaude && (
@@ -162,6 +166,16 @@ export default function RepoDetailPage() {
                   </li>
                 ))}
               </ul>
+            )}
+            {visibleCommits < data.commits.length && (
+              <button
+                type="button"
+                className="btn btn-secondary w-full mt-4"
+                onClick={() => setVisibleCommits((v) => v + COMMITS_PAGE)}
+              >
+                Show {Math.min(COMMITS_PAGE, data.commits.length - visibleCommits)} more
+                {" "}({data.commits.length - visibleCommits} remaining)
+              </button>
             )}
           </section>
 
@@ -198,9 +212,16 @@ export default function RepoDetailPage() {
                     >
                       {p.title}
                     </div>
-                    <div className="body-sm font-mono mt-1" style={{ color: "var(--color-ink-muted)" }}>
-                      +{fmtNum(p.additions)} −{fmtNum(p.deletions)} · {p.reviewCount} reviews
-                      {p.timeToMergeMinutes != null && ` · merged in ${humanMinutes(p.timeToMergeMinutes)}`}
+                    <div
+                      className="body-sm font-mono mt-1 flex items-center gap-2 flex-wrap"
+                      style={{ color: "var(--color-ink-muted)" }}
+                    >
+                      <span style={{ color: "var(--color-add)" }}>+{fmtNum(p.additions)}</span>
+                      <span style={{ color: "var(--color-remove)" }}>−{fmtNum(p.deletions)}</span>
+                      <span>· {p.reviewCount} reviews</span>
+                      {p.timeToMergeMinutes != null && (
+                        <span>· merged in {humanMinutes(p.timeToMergeMinutes)}</span>
+                      )}
                     </div>
                   </li>
                 ))}

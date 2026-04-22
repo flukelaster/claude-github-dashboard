@@ -125,12 +125,15 @@ export const api = {
   languages: () =>
     j<{
       totalBytes: number;
+      totalLoc: number;
       languages: {
         language: string;
         color: string | null;
         bytes: number;
+        loc: number;
         ratio: number;
-        perRepo: { repoId: number; localPath: string; bytes: number }[];
+        locRatio: number;
+        perRepo: { repoId: number; localPath: string; bytes: number; loc: number }[];
       }[];
       byRepo: {
         repoId: number;
@@ -138,7 +141,15 @@ export const api = {
         githubOwner: string | null;
         githubName: string | null;
         totalBytes: number;
-        languages: { language: string; color: string | null; bytes: number; ratio: number }[];
+        totalLoc: number;
+        languages: {
+          language: string;
+          color: string | null;
+          bytes: number;
+          loc: number;
+          ratio: number;
+          locRatio: number;
+        }[];
       }[];
     }>(`/languages`),
   getGithubToken: () =>

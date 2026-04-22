@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNowStrict } from "date-fns";
 import PageHeader from "../components/PageHeader";
@@ -6,9 +7,13 @@ import { Th, Td } from "../components/Table";
 import { api, fmtCompact, fmtUsd } from "../lib/api";
 import { shortenPath } from "../lib/fmt";
 
+const PAGE = 50;
+
 export default function SessionsPage() {
-  const q = useQuery({ queryKey: ["sessions"], queryFn: () => api.sessions(100) });
+  const [limit, setLimit] = useState(PAGE);
+  const q = useQuery({ queryKey: ["sessions", limit], queryFn: () => api.sessions(limit) });
   const data = q.data ?? [];
+  const maybeMore = data.length === limit;
 
   return (
     <div>
@@ -66,6 +71,18 @@ export default function SessionsPage() {
               ))}
             </tbody>
           </table>
+          {maybeMore && (
+            <div className="p-4 border-t" style={{ borderColor: "var(--color-line)" }}>
+              <button
+                type="button"
+                className="btn btn-secondary w-full"
+                onClick={() => setLimit((l) => l + PAGE)}
+                disabled={q.isFetching}
+              >
+                {q.isFetching ? "Loading…" : `Load ${PAGE} more`}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
