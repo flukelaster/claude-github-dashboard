@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CartesianGrid,
   Line,
@@ -197,6 +197,13 @@ function cumulate<T extends { date: string; costUsd: number }>(data: T[]) {
   return data.map((d) => ({ ...d, cumCost: (c += d.costUsd) }));
 }
 
+const ROLE_PRESETS = [
+  { value: "junior", label: "Junior", sub: "0–2 yr", hourlyRate: 55,  locPerHour: 30 },
+  { value: "mid",    label: "Mid",    sub: "2–5 yr", hourlyRate: 83,  locPerHour: 50 },
+  { value: "senior", label: "Senior", sub: "5+ yr",  hourlyRate: 105, locPerHour: 70 },
+  { value: "lead",   label: "Lead",   sub: "Staff",  hourlyRate: 131, locPerHour: 60 },
+] as const;
+
 function RoiSection({
   locAttributed,
   totalCostUsd,
@@ -212,29 +219,64 @@ function RoiSection({
 }) {
   if (locAttributed === 0 || totalCostUsd === 0) return null;
 
+  const qc = useQueryClient();
+  const setRole = useMutation({
+    mutationFn: api.setRoiConfig,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["roiConfig"] }),
+  });
+
   const timeSavedHr = locAttributed / locPerHour;
   const valueSaved = timeSavedHr * hourlyRate;
   const roiPct = ((valueSaved - totalCostUsd) / totalCostUsd) * 100;
   const multiplier = valueSaved / totalCostUsd;
 
-  const roleLabel: Record<string, string> = {
-    junior: "Junior (0–2 yr)",
-    mid: "Mid (2–5 yr)",
-    senior: "Senior (5+ yr)",
-    lead: "Lead / Staff",
-    custom: "Custom",
-  };
+  const activePreset = ROLE_PRESETS.find((p) => p.value === role);
+
+  function handleRoleTab(p: typeof ROLE_PRESETS[number]) {
+    setRole.mutate({ role: p.value, hourlyRate: p.hourlyRate, locPerHour: p.locPerHour });
+  }
 
   return (
     <div className="mb-10">
-      <div className="flex items-baseline justify-between mb-3">
+      <div className="flex items-start justify-between gap-4 mb-4">
         <div>
           <div className="mono-label mb-0.5" style={{ color: "var(--color-ink-muted)" }}>roi estimate</div>
           <h3 className="display-card">Time & value saved</h3>
         </div>
-        <Link to="/settings" className="btn btn-secondary text-[12px]">
-          Edit assumptions
-        </Link>
+
+        <div className="flex flex-col items-end gap-2">
+          <div className="card-flat inline-flex p-0.5" role="tablist" aria-label="Developer role">
+            {ROLE_PRESETS.map((p) => {
+              const active = role === p.value;
+              return (
+                <button
+                  key={p.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={active ? "true" : "false"}
+                  disabled={setRole.isPending}
+                  onClick={() => handleRoleTab(p)}
+                  className="px-3 h-7 text-[13px] font-medium rounded-[4px] font-mono transition-colors leading-none flex flex-col items-center justify-center"
+                  style={{
+                    background: active ? "var(--color-ink)" : "transparent",
+                    color: active ? "var(--color-surface)" : "var(--color-ink-soft)",
+                  }}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+          {role === "custom" ? (
+            <Link to="/settings" className="btn btn-secondary text-[12px] h-7 py-0">
+              Custom rate · Edit
+            </Link>
+          ) : activePreset ? (
+            <span className="font-mono text-[11px]" style={{ color: "var(--color-ink-muted)" }}>
+              ${activePreset.hourlyRate}/hr · {activePreset.locPerHour} LOC/hr
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
@@ -273,9 +315,8 @@ function RoiSection({
         }}
       >
         <span className="pill pill-ink mr-2">methodology</span>
-        Preset: <strong style={{ color: "var(--color-ink)" }}>{roleLabel[role] ?? role}</strong>
-        {" · "}${hourlyRate}/hr (BLS OES May 2024, loaded ×1.3 ÷ 2,080 hr/yr)
-        {" · "}{locPerHour} LOC/hr (McConnell <em>Code Complete</em> §28, focused session)
+        ${hourlyRate}/hr (BLS OES May 2024, loaded ×1.3 ÷ 2,080 hr/yr)
+        {" · "}{locPerHour} LOC/hr (McConnell <em>Code Complete</em> §28)
         {" · "}LOC = additions + deletions on AI-assisted commits (churn, not net)
         {" · "}
         <a
@@ -286,6 +327,10 @@ function RoiSection({
         >
           BLS OES 15-1252
         </a>
+        {" · "}
+        <Link to="/settings" style={{ color: "var(--color-develop)" }}>
+          custom rate →
+        </Link>
       </div>
     </div>
   );

@@ -241,12 +241,30 @@ export default function SettingsPage() {
 // Rates: BLS OES May 2024 percentile salaries × 1.3 loaded cost ÷ 2080 hr/yr
 // P25 ≈ $88k → $55/hr · P50 ≈ $132k → $83/hr · P75 ≈ $168k → $105/hr · P90 ≈ $210k → $131/hr
 const ROLE_PRESETS = [
-  { value: "junior", label: "Junior  (0–2 yr)",  hourlyRate: 55,  locPerHour: 30 },
-  { value: "mid",    label: "Mid     (2–5 yr)",  hourlyRate: 83,  locPerHour: 50 },
-  { value: "senior", label: "Senior  (5+ yr)",   hourlyRate: 105, locPerHour: 70 },
-  { value: "lead",   label: "Lead / Staff",       hourlyRate: 131, locPerHour: 60 },
-  { value: "custom", label: "Custom",             hourlyRate: 83,  locPerHour: 50 },
+  { value: "junior", label: "Junior", sub: "0–2 yr", hourlyRate: 55,  locPerHour: 30 },
+  { value: "mid",    label: "Mid",    sub: "2–5 yr", hourlyRate: 83,  locPerHour: 50 },
+  { value: "senior", label: "Senior", sub: "5+ yr",  hourlyRate: 105, locPerHour: 70 },
+  { value: "lead",   label: "Lead",   sub: "Staff",  hourlyRate: 131, locPerHour: 60 },
 ] as const;
+
+type PresetValue = typeof ROLE_PRESETS[number]["value"];
+
+const CUSTOM_KEY = "cgd_custom_rates";
+
+type CustomRateEntry = { hourlyRate: string; locPerHour: string };
+type CustomRateMap = Partial<Record<PresetValue, CustomRateEntry>>;
+
+function loadCustomRates(): CustomRateMap {
+  try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? "{}"); } catch { return {}; }
+}
+function persistCustomRates(m: CustomRateMap) {
+  localStorage.setItem(CUSTOM_KEY, JSON.stringify(m));
+}
+
+function isBlsDefault(role: PresetValue, hourlyRate: number, locPerHour: number): boolean {
+  const p = ROLE_PRESETS.find((r) => r.value === role);
+  return !!p && p.hourlyRate === hourlyRate && p.locPerHour === locPerHour;
+}
 
 function RoiSettings() {
   const qc = useQueryClient();
@@ -260,33 +278,67 @@ function RoiSettings() {
     onError: () => toast.error("Failed to save"),
   });
 
-  const [role, setRole] = useState<string>("senior");
-  const [rate, setRate] = useState<string>("105");
-  const [loc, setLoc] = useState<string>("70");
+  const [mode, setMode] = useState<"preset" | "custom">("preset");
+  const [activeRole, setActiveRole] = useState<PresetValue>("senior");
+  // per-role editable values (custom mode)
+  const [customRates, setCustomRates] = useState<CustomRateMap>(() => loadCustomRates());
+
+  // current editable fields for the active role in custom mode
+  const currentCustom = customRates[activeRole] ?? {
+    hourlyRate: String(ROLE_PRESETS.find((p) => p.value === activeRole)?.hourlyRate ?? 105),
+    locPerHour: String(ROLE_PRESETS.find((p) => p.value === activeRole)?.locPerHour ?? 70),
+  };
 
   useEffect(() => {
-    if (cfg.isSuccess && cfg.data) {
-      setRole(cfg.data.role);
-      setRate(String(cfg.data.hourlyRate));
-      setLoc(String(cfg.data.locPerHour));
+    if (!cfg.isSuccess || !cfg.data) return;
+    const savedRole = (cfg.data.role === "custom" ? "senior" : cfg.data.role) as PresetValue;
+    const preset = ROLE_PRESETS.find((p) => p.value === savedRole);
+    setActiveRole(savedRole);
+    if (preset && isBlsDefault(savedRole, cfg.data.hourlyRate, cfg.data.locPerHour)) {
+      setMode("preset");
+    } else {
+      setMode("custom");
+      setCustomRates((prev) => {
+        const next = { ...prev, [savedRole]: { hourlyRate: String(cfg.data.hourlyRate), locPerHour: String(cfg.data.locPerHour) } };
+        persistCustomRates(next);
+        return next;
+      });
     }
   }, [cfg.isSuccess, cfg.data]);
 
-  function handleRoleChange(v: string) {
-    setRole(v);
-    const preset = ROLE_PRESETS.find((p) => p.value === v);
-    if (preset && v !== "custom") {
-      setRate(String(preset.hourlyRate));
-      setLoc(String(preset.locPerHour));
+  function handleRoleTab(p: typeof ROLE_PRESETS[number]) {
+    setActiveRole(p.value);
+    // custom mode: seed from localStorage or BLS defaults if first time
+    if (mode === "custom" && !customRates[p.value]) {
+      setCustomRates((prev) => {
+        const next = { ...prev, [p.value]: { hourlyRate: String(p.hourlyRate), locPerHour: String(p.locPerHour) } };
+        persistCustomRates(next);
+        return next;
+      });
     }
   }
 
-  function handleSave() {
-    const hr = Number(rate);
-    const lph = Number(loc);
-    if (!isFinite(hr) || hr <= 0 || !isFinite(lph) || lph <= 0) return;
-    save.mutate({ role, hourlyRate: hr, locPerHour: lph });
+  function updateField(field: keyof CustomRateEntry, value: string) {
+    setCustomRates((prev) => {
+      const next = { ...prev, [activeRole]: { ...currentCustom, [field]: value } };
+      persistCustomRates(next);
+      return next;
+    });
   }
+
+  function handleSave() {
+    const preset = ROLE_PRESETS.find((p) => p.value === activeRole)!;
+    if (mode === "preset") {
+      save.mutate({ role: activeRole, hourlyRate: preset.hourlyRate, locPerHour: preset.locPerHour });
+      return;
+    }
+    const hr = Number(currentCustom.hourlyRate);
+    const lph = Number(currentCustom.locPerHour);
+    if (!isFinite(hr) || hr <= 0 || !isFinite(lph) || lph <= 0) return;
+    save.mutate({ role: activeRole, hourlyRate: hr, locPerHour: lph });
+  }
+
+  const presetData = ROLE_PRESETS.find((p) => p.value === activeRole);
 
   return (
     <section className="card p-6">
@@ -294,51 +346,91 @@ function RoiSettings() {
       <h3 className="display-card mb-1">Developer rate card</h3>
       <p className="body-sm mb-5" style={{ color: "var(--color-ink-muted)" }}>
         Used to estimate time saved and ROI on the Overview page.
-        Rates from <a href="https://www.bls.gov/oes/current/oes151252.htm" target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-develop)" }}>BLS OES May 2024</a> (US Software Developers) — percentile salary × 1.3 loaded cost ÷ 2,080 hr/yr.
+        Rates from{" "}
+        <a href="https://www.bls.gov/oes/current/oes151252.htm" target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-develop)" }}>
+          BLS OES May 2024
+        </a>{" "}
+        (US Software Developers) — percentile salary × 1.3 loaded cost ÷ 2,080 hr/yr.
         LOC/hr from McConnell <em>Code Complete §28</em> (focused coding session, not whole-day average).
       </p>
 
-      <div className="flex flex-col gap-4">
-        <div>
-          <label className="mono-label block mb-1.5" style={{ color: "var(--color-ink-muted)" }}>
-            role preset
+      {/* Mode toggle */}
+      <div className="flex gap-4 mb-5">
+        {(["preset", "custom"] as const).map((m) => (
+          <label
+            key={m}
+            className="flex items-center gap-2 cursor-pointer select-none"
+            style={{ color: mode === m ? "var(--color-ink)" : "var(--color-ink-muted)" }}
+          >
+            <input
+              type="radio"
+              name="roi-mode"
+              value={m}
+              checked={mode === m}
+              onChange={() => setMode(m)}
+              className="accent-ink"
+            />
+            <span className="font-mono text-[13px] font-medium">
+              {m === "preset" ? "BLS OES defaults" : "Custom rate card"}
+            </span>
           </label>
-          <div className="relative">
-            <select
-              title="Role preset"
-              className="h-9 pl-3 pr-8 rounded-[6px] font-mono text-[13px] w-full appearance-none"
-              style={{
-                background: "var(--color-surface)",
-                boxShadow: "var(--shadow-ring-light)",
-                color: "var(--color-ink)",
-                outline: "none",
-              }}
-              value={role}
-              onChange={(e) => handleRoleChange(e.target.value)}
-            >
-              {ROLE_PRESETS.map((p) => (
-                <option key={p.value} value={p.value}>
-                  {p.label} {p.value !== "custom" ? `— $${p.hourlyRate}/hr · ${p.locPerHour} LOC/hr` : ""}
-                </option>
-              ))}
-            </select>
-            <svg
-              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"
-              width={14}
-              height={14}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              style={{ color: "var(--color-ink-muted)" }}
-            >
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </div>
-        </div>
+        ))}
+      </div>
 
+      {/* Role tabs — shared between both modes */}
+      <div className="mb-4">
+        <div className="mono-label mb-2" style={{ color: "var(--color-ink-muted)" }}>role</div>
+        <div className="card-flat inline-flex p-0.5" role="tablist" aria-label="Developer role">
+          {ROLE_PRESETS.map((p) => {
+            const active = activeRole === p.value;
+            const hasCustom = mode === "custom" && customRates[p.value] &&
+              !isBlsDefault(p.value, Number(customRates[p.value]!.hourlyRate), Number(customRates[p.value]!.locPerHour));
+            return (
+              <button
+                key={p.value}
+                type="button"
+                role="tab"
+                aria-selected={active ? "true" : "false"}
+                onClick={() => handleRoleTab(p)}
+                className="relative px-4 h-8 text-[13px] font-medium rounded-[4px] font-mono transition-colors"
+                style={{
+                  background: active ? "var(--color-ink)" : "transparent",
+                  color: active ? "var(--color-surface)" : "var(--color-ink-soft)",
+                }}
+              >
+                {p.label}
+                {hasCustom && (
+                  <span
+                    className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full"
+                    style={{ background: active ? "var(--color-surface)" : "var(--color-develop)" }}
+                    title="Custom rate set"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Rate display / inputs */}
+      {mode === "preset" ? (
+        presetData && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="p-3 rounded-[6px]" style={{ background: "var(--color-surface-tint)", boxShadow: "var(--shadow-ring-light)" }}>
+              <div className="mono-label mb-1" style={{ color: "var(--color-ink-muted)" }}>experience</div>
+              <div className="font-mono text-[14px]" style={{ color: "var(--color-ink)" }}>{presetData.sub}</div>
+            </div>
+            <div className="p-3 rounded-[6px]" style={{ background: "var(--color-surface-tint)", boxShadow: "var(--shadow-ring-light)" }}>
+              <div className="mono-label mb-1" style={{ color: "var(--color-ink-muted)" }}>hourly rate</div>
+              <div className="font-mono text-[14px]" style={{ color: "var(--color-ink)" }}>${presetData.hourlyRate}/hr</div>
+            </div>
+            <div className="p-3 rounded-[6px]" style={{ background: "var(--color-surface-tint)", boxShadow: "var(--shadow-ring-light)" }}>
+              <div className="mono-label mb-1" style={{ color: "var(--color-ink-muted)" }}>LOC / hr</div>
+              <div className="font-mono text-[14px]" style={{ color: "var(--color-ink)" }}>{presetData.locPerHour}</div>
+            </div>
+          </div>
+        )
+      ) : (
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="mono-label block mb-1.5" style={{ color: "var(--color-ink-muted)" }}>
@@ -349,16 +441,11 @@ function RoiSettings() {
               min={1}
               max={10000}
               title="Hourly rate in USD"
-              placeholder="120"
-              value={rate}
-              onChange={(e) => { setRate(e.target.value); setRole("custom"); }}
+              placeholder={String(presetData?.hourlyRate ?? 105)}
+              value={currentCustom.hourlyRate}
+              onChange={(e) => updateField("hourlyRate", e.target.value)}
               className="h-9 px-3 rounded-[6px] font-mono text-[13px] w-full"
-              style={{
-                background: "var(--color-surface)",
-                boxShadow: "var(--shadow-ring-light)",
-                outline: "none",
-                color: "var(--color-ink)",
-              }}
+              style={{ background: "var(--color-surface)", boxShadow: "var(--shadow-ring-light)", outline: "none", color: "var(--color-ink)" }}
             />
           </div>
           <div>
@@ -370,30 +457,37 @@ function RoiSettings() {
               min={1}
               max={10000}
               title="Lines of code per hour"
-              placeholder="70"
-              value={loc}
-              onChange={(e) => { setLoc(e.target.value); setRole("custom"); }}
+              placeholder={String(presetData?.locPerHour ?? 70)}
+              value={currentCustom.locPerHour}
+              onChange={(e) => updateField("locPerHour", e.target.value)}
               className="h-9 px-3 rounded-[6px] font-mono text-[13px] w-full"
-              style={{
-                background: "var(--color-surface)",
-                boxShadow: "var(--shadow-ring-light)",
-                outline: "none",
-                color: "var(--color-ink)",
-              }}
+              style={{ background: "var(--color-surface)", boxShadow: "var(--shadow-ring-light)", outline: "none", color: "var(--color-ink)" }}
             />
           </div>
         </div>
+      )}
 
-        <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 mt-5">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={handleSave}
+          disabled={save.isPending}
+        >
+          {save.isPending ? "Saving…" : "Save"}
+        </button>
+        {mode === "custom" && presetData && (
           <button
             type="button"
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={save.isPending}
+            className="btn btn-secondary text-[12px]"
+            onClick={() => {
+              updateField("hourlyRate", String(presetData.hourlyRate));
+              updateField("locPerHour", String(presetData.locPerHour));
+            }}
           >
-            {save.isPending ? "Saving…" : "Save"}
+            Reset to BLS defaults
           </button>
-        </div>
+        )}
       </div>
     </section>
   );
