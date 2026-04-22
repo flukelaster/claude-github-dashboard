@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router";
+import { Toaster } from "sonner";
 import SyncButton from "./SyncButton";
 import ThemeToggle from "./ThemeToggle";
 
@@ -52,6 +53,7 @@ export default function Shell() {
       <main className="mx-auto max-w-[1200px] px-6 py-10">
         <Outlet />
       </main>
+      <Toaster position="bottom-right" richColors closeButton />
       <footer className="border-t border-[var(--color-line)] mt-24 py-8">
         <div className="mx-auto max-w-[1200px] px-6 flex items-center justify-between">
           <span className="mono-label">local-only • no telemetry</span>

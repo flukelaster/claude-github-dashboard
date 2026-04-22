@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import PageHeader from "../components/PageHeader";
 import { api } from "../lib/api";
 
@@ -252,21 +253,24 @@ function RoiSettings() {
   const cfg = useQuery({ queryKey: ["roiConfig"], queryFn: api.getRoiConfig });
   const save = useMutation({
     mutationFn: api.setRoiConfig,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["roiConfig"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["roiConfig"] });
+      toast.success("Rate card saved");
+    },
+    onError: () => toast.error("Failed to save"),
   });
 
-  const current = cfg.data ?? { role: "senior", hourlyRate: 105, locPerHour: 70 };
-  const [role, setRole] = useState<string>(current.role);
-  const [rate, setRate] = useState<string>(String(current.hourlyRate));
-  const [loc, setLoc] = useState<string>(String(current.locPerHour));
+  const [role, setRole] = useState<string>("senior");
+  const [rate, setRate] = useState<string>("105");
+  const [loc, setLoc] = useState<string>("70");
 
-  // Sync state when query loads
-  const loaded = cfg.isSuccess;
-  if (loaded && role !== current.role && !save.isPending) {
-    setRole(current.role);
-    setRate(String(current.hourlyRate));
-    setLoc(String(current.locPerHour));
-  }
+  useEffect(() => {
+    if (cfg.isSuccess && cfg.data) {
+      setRole(cfg.data.role);
+      setRate(String(cfg.data.hourlyRate));
+      setLoc(String(cfg.data.locPerHour));
+    }
+  }, [cfg.isSuccess, cfg.data]);
 
   function handleRoleChange(v: string) {
     setRole(v);
@@ -299,24 +303,40 @@ function RoiSettings() {
           <label className="mono-label block mb-1.5" style={{ color: "var(--color-ink-muted)" }}>
             role preset
           </label>
-          <select
-            title="Role preset"
-            className="h-9 px-3 rounded-[6px] font-mono text-[13px] w-full"
-            style={{
-              background: "var(--color-surface)",
-              boxShadow: "var(--shadow-ring-light)",
-              color: "var(--color-ink)",
-              outline: "none",
-            }}
-            value={role}
-            onChange={(e) => handleRoleChange(e.target.value)}
-          >
-            {ROLE_PRESETS.map((p) => (
-              <option key={p.value} value={p.value}>
-                {p.label} {p.value !== "custom" ? `— $${p.hourlyRate}/hr · ${p.locPerHour} LOC/hr` : ""}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              title="Role preset"
+              className="h-9 pl-3 pr-8 rounded-[6px] font-mono text-[13px] w-full appearance-none"
+              style={{
+                background: "var(--color-surface)",
+                boxShadow: "var(--shadow-ring-light)",
+                color: "var(--color-ink)",
+                outline: "none",
+              }}
+              value={role}
+              onChange={(e) => handleRoleChange(e.target.value)}
+            >
+              {ROLE_PRESETS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label} {p.value !== "custom" ? `— $${p.hourlyRate}/hr · ${p.locPerHour} LOC/hr` : ""}
+                </option>
+              ))}
+            </select>
+            <svg
+              className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2"
+              width={14}
+              height={14}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              style={{ color: "var(--color-ink-muted)" }}
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -373,9 +393,6 @@ function RoiSettings() {
           >
             {save.isPending ? "Saving…" : "Save"}
           </button>
-          {save.isSuccess && (
-            <span className="body-sm" style={{ color: "var(--color-add)" }}>Saved</span>
-          )}
         </div>
       </div>
     </section>
