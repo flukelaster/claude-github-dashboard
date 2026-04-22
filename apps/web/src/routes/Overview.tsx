@@ -276,15 +276,11 @@ function RoiSection({
               );
             })}
           </div>
-          {role === "custom" ? (
-            <Link to="/settings" className="btn btn-secondary text-[12px] h-7 py-0">
-              Custom rate · Edit
-            </Link>
-          ) : activePreset ? (
+          {activePreset && (
             <span className="font-mono text-[11px]" style={{ color: "var(--color-ink-muted)" }}>
               {symbol}{activePreset.hourlyRate}/hr · {activePreset.locPerHour} LOC/hr
             </span>
-          ) : null}
+          )}
         </div>
       </div>
 
