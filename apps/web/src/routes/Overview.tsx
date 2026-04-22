@@ -296,7 +296,7 @@ function RoiSection({
           label="roi"
           value={`+${fmtNum(roiPct, 0)}%`}
           sub={`${fmtNum(multiplier, 1)}× return on Claude spend`}
-          accent="preview"
+          accent="add"
         />
         <KpiCard
           label="claude spend"

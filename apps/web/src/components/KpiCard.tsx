@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 
-type Accent = "develop" | "preview" | "ship" | null;
+type Accent = "develop" | "preview" | "ship" | "add" | null;
 
 const ACCENT_COLOR: Record<Exclude<Accent, null>, string> = {
   develop: "var(--color-develop)",
   preview: "var(--color-preview)",
   ship: "var(--color-ship)",
+  add: "var(--color-add)",
 };
 
 interface Props {
