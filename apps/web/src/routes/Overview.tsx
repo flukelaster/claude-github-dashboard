@@ -327,10 +327,6 @@ function RoiSection({
         <Link to="/settings" style={{ color: "var(--color-develop)" }}>
           rate card settings →
         </Link>
-        {" · "}
-        <Link to="/settings" style={{ color: "var(--color-develop)" }}>
-          custom rate →
-        </Link>
       </div>
     </div>
   );
