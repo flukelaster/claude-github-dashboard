@@ -24,6 +24,7 @@ A local-only dashboard that cross-references **Claude Code usage** (tokens, cost
 2. [Technology stack](#technology-stack)
 3. [Quick start](#quick-start)
 4. [Features](#features)
+   - [ROI estimate](#roi-estimate)
 5. [Themes](#themes)
 6. [Architecture](#architecture)
 7. [Project structure](#project-structure)
@@ -108,6 +109,28 @@ The token is written to the macOS Keychain via `keytar`; it is never stored in `
 A single-pane view of the core metrics. KPI cards summarise cost, session count, attributed lines of code, and AI-assisted commit ratio. Primary chart shows daily Claude spend stacked by model; secondary chart tracks cumulative cost.
 
 ![Overview](docs/screenshots/01-overview-dark.png)
+
+### ROI estimate
+
+Below the KPI cards, a **Time & value saved** panel converts AI-assisted lines of code into a monetary return on Claude spend.
+
+| Metric | Formula |
+|---|---|
+| Time saved | `AI-attributed LOC ÷ LOC/hr` |
+| Value saved | `time saved × developer hourly rate` |
+| ROI | `(value saved USD − Claude spend) ÷ Claude spend` |
+| Multiplier | `value saved USD ÷ Claude spend` |
+
+LOC counts additions + deletions on AI-assisted commits (gross churn, not net change), following McConnell *Code Complete* §28. Rate cards ship with **JobsDB Thailand Salary Guide 2024** defaults (Bangkok IT market, median salary × 1.3 loaded cost ÷ 2,080 hr/yr):
+
+| Role | Hourly rate (THB) | LOC/hr |
+|---|---|---|
+| Junior (0–2 yr) | ฿262 | 30 |
+| Mid (2–5 yr) | ฿487 | 50 |
+| Senior (5+ yr) | ฿825 | 70 |
+| Lead / Staff | ฿1,276 | 60 |
+
+Currency is Thai Baht; USD conversion uses a fixed rate of ฿35 = $1. Role and custom rates are configurable in **Settings → Developer rate card**. The active rate and methodology reference are always shown inline below the ROI cards.
 
 ### Usage
 
