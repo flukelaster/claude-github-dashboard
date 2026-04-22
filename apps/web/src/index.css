@@ -334,3 +334,59 @@
 .recharts-tooltip-wrapper {
   outline: none !important;
 }
+
+/* =========================================================================
+   Sonner toast overrides — match design system
+   ========================================================================= */
+[data-sonner-toaster] {
+  --width: 340px;
+  font-family: var(--font-sans) !important;
+}
+
+[data-sonner-toast] {
+  background: var(--color-surface) !important;
+  color: var(--color-ink) !important;
+  border: none !important;
+  box-shadow: var(--color-surface) 0 0 0 1px, var(--shadow-card) !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  padding: 14px 16px !important;
+  gap: 10px !important;
+}
+
+[data-sonner-toast] [data-description] {
+  color: var(--color-ink-muted) !important;
+  font-size: 13px !important;
+  font-weight: 400 !important;
+}
+
+[data-sonner-toast] [data-icon] {
+  width: 16px !important;
+  height: 16px !important;
+  margin-top: 1px !important;
+}
+
+[data-sonner-toast][data-type="success"] [data-icon] svg {
+  color: var(--color-add) !important;
+}
+
+[data-sonner-toast][data-type="error"] [data-icon] svg {
+  color: var(--color-ship) !important;
+}
+
+[data-sonner-toast] [data-close-button] {
+  background: var(--color-surface) !important;
+  border: none !important;
+  box-shadow: var(--shadow-ring-light) !important;
+  border-radius: 4px !important;
+  color: var(--color-ink-muted) !important;
+  top: 10px !important;
+  right: 10px !important;
+  left: auto !important;
+}
+
+[data-sonner-toast] [data-close-button]:hover {
+  background: var(--color-hover) !important;
+  color: var(--color-ink) !important;
+}
