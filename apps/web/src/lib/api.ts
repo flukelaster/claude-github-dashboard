@@ -162,6 +162,13 @@ export const api = {
       body: JSON.stringify({ token }),
     }),
   deleteGithubToken: () => j<{ ok: boolean }>(`/settings/github/token`, { method: "DELETE" }),
+  getRoiConfig: () =>
+    j<{ role: string; hourlyRate: number; locPerHour: number }>(`/settings/roi`),
+  setRoiConfig: (cfg: { role: string; hourlyRate: number; locPerHour: number }) =>
+    j<{ ok: boolean }>(`/settings/roi`, {
+      method: "POST",
+      body: JSON.stringify(cfg),
+    }),
   testGithubConnection: () =>
     j<{
       ok: boolean;

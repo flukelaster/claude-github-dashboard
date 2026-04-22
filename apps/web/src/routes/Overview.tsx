@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   CartesianGrid,
@@ -24,6 +25,7 @@ export default function OverviewPage() {
   const [range, setRange] = useState("30d");
   const ov = useQuery({ queryKey: ["overview", range], queryFn: () => api.overview(range) });
   const daily = useQuery({ queryKey: ["daily", range], queryFn: () => api.usageDaily(range) });
+  const roiCfg = useQuery({ queryKey: ["roiConfig"], queryFn: api.getRoiConfig });
 
   const isEmpty = ov.data && ov.data.sessionCount === 0;
 
@@ -91,6 +93,14 @@ export default function OverviewPage() {
               accent="preview"
             />
           </div>
+
+          <RoiSection
+            locAttributed={ov.data?.locAttributed ?? 0}
+            totalCostUsd={ov.data?.totalCostUsd ?? 0}
+            hourlyRate={roiCfg.data?.hourlyRate ?? 105}
+            locPerHour={roiCfg.data?.locPerHour ?? 70}
+            role={roiCfg.data?.role ?? "senior"}
+          />
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-10">
             <div className="card p-5 xl:col-span-2">
@@ -185,4 +195,98 @@ export default function OverviewPage() {
 function cumulate<T extends { date: string; costUsd: number }>(data: T[]) {
   let c = 0;
   return data.map((d) => ({ ...d, cumCost: (c += d.costUsd) }));
+}
+
+function RoiSection({
+  locAttributed,
+  totalCostUsd,
+  hourlyRate,
+  locPerHour,
+  role,
+}: {
+  locAttributed: number;
+  totalCostUsd: number;
+  hourlyRate: number;
+  locPerHour: number;
+  role: string;
+}) {
+  if (locAttributed === 0 || totalCostUsd === 0) return null;
+
+  const timeSavedHr = locAttributed / locPerHour;
+  const valueSaved = timeSavedHr * hourlyRate;
+  const roiPct = ((valueSaved - totalCostUsd) / totalCostUsd) * 100;
+  const multiplier = valueSaved / totalCostUsd;
+
+  const roleLabel: Record<string, string> = {
+    junior: "Junior (0–2 yr)",
+    mid: "Mid (2–5 yr)",
+    senior: "Senior (5+ yr)",
+    lead: "Lead / Staff",
+    custom: "Custom",
+  };
+
+  return (
+    <div className="mb-10">
+      <div className="flex items-baseline justify-between mb-3">
+        <div>
+          <div className="mono-label mb-0.5" style={{ color: "var(--color-ink-muted)" }}>roi estimate</div>
+          <h3 className="display-card">Time & value saved</h3>
+        </div>
+        <Link to="/settings" className="btn btn-secondary text-[12px]">
+          Edit assumptions
+        </Link>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-3">
+        <KpiCard
+          label="time saved"
+          value={`${fmtNum(timeSavedHr, 1)} hr`}
+          sub={`${fmtNum(locAttributed)} LOC ÷ ${locPerHour} LOC/hr`}
+          accent="develop"
+        />
+        <KpiCard
+          label="value saved"
+          value={fmtUsd(valueSaved, 0)}
+          sub={`${fmtNum(timeSavedHr, 1)} hr × $${hourlyRate}/hr`}
+          accent="develop"
+        />
+        <KpiCard
+          label="roi"
+          value={`+${fmtNum(roiPct, 0)}%`}
+          sub={`${fmtNum(multiplier, 1)}× return on Claude spend`}
+          accent="preview"
+        />
+        <KpiCard
+          label="claude spend"
+          value={fmtUsd(totalCostUsd)}
+          sub={`vs ${fmtUsd(valueSaved, 0)} dev-time equivalent`}
+          accent="ship"
+        />
+      </div>
+
+      <div
+        className="px-4 py-3 rounded-[6px] text-[12px] font-mono"
+        style={{
+          background: "var(--color-surface-tint)",
+          boxShadow: "var(--shadow-ring-light)",
+          color: "var(--color-ink-muted)",
+        }}
+      >
+        <span className="pill pill-ink mr-2">methodology</span>
+        Preset: <strong style={{ color: "var(--color-ink)" }}>{roleLabel[role] ?? role}</strong>
+        {" · "}${hourlyRate}/hr (BLS OES May 2024, loaded ×1.3 ÷ 2,080 hr/yr)
+        {" · "}{locPerHour} LOC/hr (McConnell <em>Code Complete</em> §28, focused session)
+        {" · "}LOC = additions + deletions on AI-assisted commits (churn, not net)
+        {" · "}
+        <a
+          href="https://www.bls.gov/oes/current/oes151252.htm"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: "var(--color-develop)" }}
+        >
+          BLS OES 15-1252
+        </a>
+      </div>
+    </div>
+  );
 }

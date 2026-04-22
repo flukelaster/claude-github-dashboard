@@ -1,8 +1,23 @@
 import { Hono } from "hono";
 import { graphql } from "@octokit/graphql";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { scrubSecrets } from "@cgd/shared";
+import { db } from "../db/client.js";
+import { settings } from "../db/schema.js";
 import { deleteSecret, getBackend, getSecret, setSecret } from "../services/keychain.js";
+
+const ROI_KEY = "roi_config";
+
+const roiInput = z.object({
+  role: z.enum(["junior", "mid", "senior", "lead", "custom"]),
+  hourlyRate: z.number().min(1).max(10_000),
+  locPerHour: z.number().min(1).max(10_000),
+});
+
+export type RoiConfig = z.infer<typeof roiInput>;
+
+const ROI_DEFAULT: RoiConfig = { role: "senior", hourlyRate: 105, locPerHour: 70 };
 
 export const settingsRoutes = new Hono();
 
@@ -36,6 +51,27 @@ settingsRoutes.post("/github/token", async (c) => {
 
 settingsRoutes.delete("/github/token", async (c) => {
   await deleteSecret("github_pat");
+  return c.json({ ok: true });
+});
+
+settingsRoutes.get("/roi", async (c) => {
+  const row = db.select().from(settings).where(eq(settings.key, ROI_KEY)).get();
+  if (!row) return c.json(ROI_DEFAULT);
+  try {
+    return c.json(JSON.parse(row.value) as RoiConfig);
+  } catch {
+    return c.json(ROI_DEFAULT);
+  }
+});
+
+settingsRoutes.post("/roi", async (c) => {
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = roiInput.safeParse(body);
+  if (!parsed.success) return c.json({ error: "invalid roi config" }, 400);
+  db.insert(settings)
+    .values({ key: ROI_KEY, value: JSON.stringify(parsed.data) })
+    .onConflictDoUpdate({ target: settings.key, set: { value: JSON.stringify(parsed.data) } })
+    .run();
   return c.json({ ok: true });
 });
 

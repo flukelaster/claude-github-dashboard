@@ -220,6 +220,8 @@ export default function SettingsPage() {
           )}
         </section>
 
+        <RoiSettings />
+
         <section className="card p-6">
           <div className="mono-label mb-2">privacy</div>
           <h3 className="display-card mb-2">What this tool does not do</h3>
@@ -232,6 +234,151 @@ export default function SettingsPage() {
         </section>
       </div>
     </div>
+  );
+}
+
+// Rates: BLS OES May 2024 percentile salaries × 1.3 loaded cost ÷ 2080 hr/yr
+// P25 ≈ $88k → $55/hr · P50 ≈ $132k → $83/hr · P75 ≈ $168k → $105/hr · P90 ≈ $210k → $131/hr
+const ROLE_PRESETS = [
+  { value: "junior", label: "Junior  (0–2 yr)",  hourlyRate: 55,  locPerHour: 30 },
+  { value: "mid",    label: "Mid     (2–5 yr)",  hourlyRate: 83,  locPerHour: 50 },
+  { value: "senior", label: "Senior  (5+ yr)",   hourlyRate: 105, locPerHour: 70 },
+  { value: "lead",   label: "Lead / Staff",       hourlyRate: 131, locPerHour: 60 },
+  { value: "custom", label: "Custom",             hourlyRate: 83,  locPerHour: 50 },
+] as const;
+
+function RoiSettings() {
+  const qc = useQueryClient();
+  const cfg = useQuery({ queryKey: ["roiConfig"], queryFn: api.getRoiConfig });
+  const save = useMutation({
+    mutationFn: api.setRoiConfig,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["roiConfig"] }),
+  });
+
+  const current = cfg.data ?? { role: "senior", hourlyRate: 105, locPerHour: 70 };
+  const [role, setRole] = useState<string>(current.role);
+  const [rate, setRate] = useState<string>(String(current.hourlyRate));
+  const [loc, setLoc] = useState<string>(String(current.locPerHour));
+
+  // Sync state when query loads
+  const loaded = cfg.isSuccess;
+  if (loaded && role !== current.role && !save.isPending) {
+    setRole(current.role);
+    setRate(String(current.hourlyRate));
+    setLoc(String(current.locPerHour));
+  }
+
+  function handleRoleChange(v: string) {
+    setRole(v);
+    const preset = ROLE_PRESETS.find((p) => p.value === v);
+    if (preset && v !== "custom") {
+      setRate(String(preset.hourlyRate));
+      setLoc(String(preset.locPerHour));
+    }
+  }
+
+  function handleSave() {
+    const hr = Number(rate);
+    const lph = Number(loc);
+    if (!isFinite(hr) || hr <= 0 || !isFinite(lph) || lph <= 0) return;
+    save.mutate({ role, hourlyRate: hr, locPerHour: lph });
+  }
+
+  return (
+    <section className="card p-6">
+      <div className="mono-label mb-2">roi estimate</div>
+      <h3 className="display-card mb-1">Developer rate card</h3>
+      <p className="body-sm mb-5" style={{ color: "var(--color-ink-muted)" }}>
+        Used to estimate time saved and ROI on the Overview page.
+        Rates from <a href="https://www.bls.gov/oes/current/oes151252.htm" target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-develop)" }}>BLS OES May 2024</a> (US Software Developers) — percentile salary × 1.3 loaded cost ÷ 2,080 hr/yr.
+        LOC/hr from McConnell <em>Code Complete §28</em> (focused coding session, not whole-day average).
+      </p>
+
+      <div className="flex flex-col gap-4">
+        <div>
+          <label className="mono-label block mb-1.5" style={{ color: "var(--color-ink-muted)" }}>
+            role preset
+          </label>
+          <select
+            title="Role preset"
+            className="h-9 px-3 rounded-[6px] font-mono text-[13px] w-full"
+            style={{
+              background: "var(--color-surface)",
+              boxShadow: "var(--shadow-ring-light)",
+              color: "var(--color-ink)",
+              outline: "none",
+            }}
+            value={role}
+            onChange={(e) => handleRoleChange(e.target.value)}
+          >
+            {ROLE_PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label} {p.value !== "custom" ? `— $${p.hourlyRate}/hr · ${p.locPerHour} LOC/hr` : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="mono-label block mb-1.5" style={{ color: "var(--color-ink-muted)" }}>
+              hourly rate ($/hr)
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={10000}
+              title="Hourly rate in USD"
+              placeholder="120"
+              value={rate}
+              onChange={(e) => { setRate(e.target.value); setRole("custom"); }}
+              className="h-9 px-3 rounded-[6px] font-mono text-[13px] w-full"
+              style={{
+                background: "var(--color-surface)",
+                boxShadow: "var(--shadow-ring-light)",
+                outline: "none",
+                color: "var(--color-ink)",
+              }}
+            />
+          </div>
+          <div>
+            <label className="mono-label block mb-1.5" style={{ color: "var(--color-ink-muted)" }}>
+              LOC / hour
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={10000}
+              title="Lines of code per hour"
+              placeholder="70"
+              value={loc}
+              onChange={(e) => { setLoc(e.target.value); setRole("custom"); }}
+              className="h-9 px-3 rounded-[6px] font-mono text-[13px] w-full"
+              style={{
+                background: "var(--color-surface)",
+                boxShadow: "var(--shadow-ring-light)",
+                outline: "none",
+                color: "var(--color-ink)",
+              }}
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={handleSave}
+            disabled={save.isPending}
+          >
+            {save.isPending ? "Saving…" : "Save"}
+          </button>
+          {save.isSuccess && (
+            <span className="body-sm" style={{ color: "var(--color-add)" }}>Saved</span>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 
