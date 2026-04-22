@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "sonner";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -23,6 +24,7 @@ import { TooltipCard } from "../components/ChartTooltip";
 
 export default function OverviewPage() {
   const [range, setRange] = useState("30d");
+  const [exporting, setExporting] = useState(false);
   const ov = useQuery({ queryKey: ["overview", range], queryFn: () => api.overview(range) });
   const daily = useQuery({ queryKey: ["daily", range], queryFn: () => api.usageDaily(range) });
   const roiCfg = useQuery({ queryKey: ["roiConfig"], queryFn: api.getRoiConfig });
@@ -31,13 +33,80 @@ export default function OverviewPage() {
 
   const models = daily.data ? collectModels(daily.data) : [];
 
+  async function handleExport() {
+    if (!ov.data || !daily.data || !roiCfg.data || exporting) return;
+    setExporting(true);
+    try {
+      const [{ pdf }, { ReportPdf }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("../components/ExportPdf"),
+      ]);
+      const blob = await pdf(
+        <ReportPdf
+          data={{
+            range,
+            generatedAt: new Date(),
+            overview: ov.data,
+            daily: daily.data,
+            roiConfig: roiCfg.data,
+          }}
+        />,
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `claude-report-${range}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast.success("Report downloaded");
+    } catch (err) {
+      console.error("PDF export failed:", err);
+      toast.error("Export failed — see console for details");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const canExport = !!ov.data && !!daily.data && !!roiCfg.data;
+
   return (
     <div>
       <PageHeader
         eyebrow="dashboard"
         title="Overview"
         description="Cross-reference Claude Code spend with shipped code. Cost per session, LOC attributed, AI-assisted ratio."
-        actions={<RangePicker value={range} onChange={setRange} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <RangePicker value={range} onChange={setRange} />
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={!canExport || exporting}
+              className="flex items-center gap-1.5 px-3 h-8 rounded-[6px] font-mono text-[12px] font-medium transition-colors disabled:opacity-40"
+              style={{
+                background: "var(--color-ink)",
+                color: "var(--color-surface)",
+              }}
+            >
+              {exporting ? (
+                <>
+                  <span
+                    className="inline-block w-3 h-3 rounded-full border-2 animate-spin"
+                    style={{
+                      borderColor: "var(--color-surface)",
+                      borderTopColor: "transparent",
+                    }}
+                  />
+                  generating…
+                </>
+              ) : (
+                <>↓ Export PDF</>
+              )}
+            </button>
+          </div>
+        }
       />
 
       <div className="card-flat px-4 py-3 mb-6 flex items-start gap-3">
@@ -321,11 +390,9 @@ function RoiSection({
       >
         <span className="pill pill-ink mr-2">methodology</span>
         {symbol}{hourlyRate}/hr{currency !== "USD" && ` ≈ $${(hourlyRate / fxRateToUsd).toFixed(1)}/hr USD`}
-        {" · "}{locPerHour} LOC/hr (McConnell <em>Code Complete</em> §28)
-        {" · "}LOC = additions + deletions on AI-assisted commits (churn, not net)
-        {" · "}
+        {" · "}{locPerHour} LOC/hr · LOC = churn on AI commits{" · "}
         <Link to="/settings" style={{ color: "var(--color-develop)" }}>
-          rate card settings →
+          rate card →
         </Link>
       </div>
     </div>
