@@ -11,13 +11,15 @@ const ROI_KEY = "roi_config";
 
 const roiInput = z.object({
   role: z.enum(["junior", "mid", "senior", "lead", "custom"]),
-  hourlyRate: z.number().min(1).max(10_000),
+  hourlyRate: z.number().min(1).max(1_000_000),
   locPerHour: z.number().min(1).max(10_000),
+  currency: z.enum(["USD", "THB"]).default("USD"),
+  fxRateToUsd: z.number().min(0.001).max(100_000).default(1),
 });
 
 export type RoiConfig = z.infer<typeof roiInput>;
 
-const ROI_DEFAULT: RoiConfig = { role: "senior", hourlyRate: 105, locPerHour: 70 };
+const ROI_DEFAULT: RoiConfig = { role: "senior", hourlyRate: 105, locPerHour: 70, currency: "USD", fxRateToUsd: 1 };
 
 export const settingsRoutes = new Hono();
 

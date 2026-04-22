@@ -238,21 +238,79 @@ export default function SettingsPage() {
   );
 }
 
-// Rates: BLS OES May 2024 percentile salaries × 1.3 loaded cost ÷ 2080 hr/yr
-// P25 ≈ $88k → $55/hr · P50 ≈ $132k → $83/hr · P75 ≈ $168k → $105/hr · P90 ≈ $210k → $131/hr
-const ROLE_PRESETS = [
+type PresetValue = "junior" | "mid" | "senior" | "lead";
+
+interface MarketPreset {
+  value: PresetValue;
+  label: string;
+  sub: string;
+  hourlyRate: number;
+  locPerHour: number;
+}
+
+interface MarketConfig {
+  id: "US" | "TH";
+  label: string;
+  flag: string;
+  currency: "USD" | "THB";
+  symbol: string;
+  fxRateToUsd: number;
+  source: string;
+  sourceUrl: string;
+  sourceNote: string;
+  presets: readonly MarketPreset[];
+}
+
+// US: BLS OES May 2024 percentile salaries × 1.3 loaded cost ÷ 2080 hr/yr
+// P25≈$88k→$55/hr · P50≈$132k→$83/hr · P75≈$168k→$105/hr · P90≈$210k→$131/hr
+const US_PRESETS: readonly MarketPreset[] = [
   { value: "junior", label: "Junior", sub: "0–2 yr", hourlyRate: 55,  locPerHour: 30 },
   { value: "mid",    label: "Mid",    sub: "2–5 yr", hourlyRate: 83,  locPerHour: 50 },
   { value: "senior", label: "Senior", sub: "5+ yr",  hourlyRate: 105, locPerHour: 70 },
   { value: "lead",   label: "Lead",   sub: "Staff",  hourlyRate: 131, locPerHour: 60 },
-] as const;
+];
 
-type PresetValue = typeof ROLE_PRESETS[number]["value"];
+// TH: JobsDB Thailand Salary Guide 2024, Bangkok IT market
+// Median salary × 1.3 loaded cost (SSO 5% + PVD 5% + benefits) ÷ 2080 hr/yr
+// Junior≈35k THB/mo→262/hr · Mid≈65k→487/hr · Senior≈110k→825/hr · Lead≈170k→1,276/hr
+const TH_PRESETS: readonly MarketPreset[] = [
+  { value: "junior", label: "Junior", sub: "0–2 yr", hourlyRate: 262,  locPerHour: 30 },
+  { value: "mid",    label: "Mid",    sub: "2–5 yr", hourlyRate: 487,  locPerHour: 50 },
+  { value: "senior", label: "Senior", sub: "5+ yr",  hourlyRate: 825,  locPerHour: 70 },
+  { value: "lead",   label: "Lead",   sub: "Staff",  hourlyRate: 1276, locPerHour: 60 },
+];
+
+const MARKETS: readonly MarketConfig[] = [
+  {
+    id: "US",
+    label: "United States",
+    flag: "🇺🇸",
+    currency: "USD",
+    symbol: "$",
+    fxRateToUsd: 1,
+    source: "BLS OES May 2024",
+    sourceUrl: "https://www.bls.gov/oes/current/oes151252.htm",
+    sourceNote: "US Software Developers (SOC 15-1252) — percentile salary × 1.3 loaded cost ÷ 2,080 hr/yr",
+    presets: US_PRESETS,
+  },
+  {
+    id: "TH",
+    label: "Thailand",
+    flag: "🇹🇭",
+    currency: "THB",
+    symbol: "฿",
+    fxRateToUsd: 35,
+    source: "JobsDB TH 2024",
+    sourceUrl: "https://th.jobsdb.com/th/salary-report",
+    sourceNote: "Bangkok IT market — median salary × 1.3 loaded cost (SSO + PVD + benefits) ÷ 2,080 hr/yr · FX 35 THB/USD",
+    presets: TH_PRESETS,
+  },
+];
 
 const CUSTOM_KEY = "cgd_custom_rates";
 
 type CustomRateEntry = { hourlyRate: string; locPerHour: string };
-type CustomRateMap = Partial<Record<PresetValue, CustomRateEntry>>;
+type CustomRateMap = Partial<Record<string, CustomRateEntry>>;
 
 function loadCustomRates(): CustomRateMap {
   try { return JSON.parse(localStorage.getItem(CUSTOM_KEY) ?? "{}"); } catch { return {}; }
@@ -261,8 +319,8 @@ function persistCustomRates(m: CustomRateMap) {
   localStorage.setItem(CUSTOM_KEY, JSON.stringify(m));
 }
 
-function isBlsDefault(role: PresetValue, hourlyRate: number, locPerHour: number): boolean {
-  const p = ROLE_PRESETS.find((r) => r.value === role);
+function isMarketDefault(presets: readonly MarketPreset[], role: PresetValue, hourlyRate: number, locPerHour: number): boolean {
+  const p = presets.find((r) => r.value === role);
   return !!p && p.hourlyRate === hourlyRate && p.locPerHour === locPerHour;
 }
 
@@ -278,40 +336,53 @@ function RoiSettings() {
     onError: () => toast.error("Failed to save"),
   });
 
+  const [marketId, setMarketId] = useState<"US" | "TH">("US");
   const [mode, setMode] = useState<"preset" | "custom">("preset");
   const [activeRole, setActiveRole] = useState<PresetValue>("senior");
-  // per-role editable values (custom mode)
   const [customRates, setCustomRates] = useState<CustomRateMap>(() => loadCustomRates());
 
-  // current editable fields for the active role in custom mode
-  const currentCustom = customRates[activeRole] ?? {
-    hourlyRate: String(ROLE_PRESETS.find((p) => p.value === activeRole)?.hourlyRate ?? 105),
-    locPerHour: String(ROLE_PRESETS.find((p) => p.value === activeRole)?.locPerHour ?? 70),
+  const market = MARKETS.find((m) => m.id === marketId)!;
+  const presets = market.presets;
+  const customKey = `${marketId}:${activeRole}`;
+  const presetData = presets.find((p) => p.value === activeRole)!;
+
+  const currentCustom = customRates[customKey] ?? {
+    hourlyRate: String(presetData.hourlyRate),
+    locPerHour: String(presetData.locPerHour),
   };
 
   useEffect(() => {
     if (!cfg.isSuccess || !cfg.data) return;
-    const savedRole = (cfg.data.role === "custom" ? "senior" : cfg.data.role) as PresetValue;
-    const preset = ROLE_PRESETS.find((p) => p.value === savedRole);
+    const d = cfg.data;
+    const detectedMarket = d.currency === "THB" ? "TH" : "US";
+    const savedRole = (d.role === "custom" ? "senior" : d.role) as PresetValue;
+    setMarketId(detectedMarket);
     setActiveRole(savedRole);
-    if (preset && isBlsDefault(savedRole, cfg.data.hourlyRate, cfg.data.locPerHour)) {
+    const mkt = MARKETS.find((m) => m.id === detectedMarket)!;
+    if (isMarketDefault(mkt.presets, savedRole, d.hourlyRate, d.locPerHour)) {
       setMode("preset");
     } else {
       setMode("custom");
+      const key = `${detectedMarket}:${savedRole}`;
       setCustomRates((prev) => {
-        const next = { ...prev, [savedRole]: { hourlyRate: String(cfg.data.hourlyRate), locPerHour: String(cfg.data.locPerHour) } };
+        const next = { ...prev, [key]: { hourlyRate: String(d.hourlyRate), locPerHour: String(d.locPerHour) } };
         persistCustomRates(next);
         return next;
       });
     }
   }, [cfg.isSuccess, cfg.data]);
 
-  function handleRoleTab(p: typeof ROLE_PRESETS[number]) {
+  function handleMarketChange(id: "US" | "TH") {
+    setMarketId(id);
+    // keep role, but reset to preset mode so stale custom rates don't confuse
+  }
+
+  function handleRoleTab(p: MarketPreset) {
     setActiveRole(p.value);
-    // custom mode: seed from localStorage or BLS defaults if first time
-    if (mode === "custom" && !customRates[p.value]) {
+    const key = `${marketId}:${p.value}`;
+    if (mode === "custom" && !customRates[key]) {
       setCustomRates((prev) => {
-        const next = { ...prev, [p.value]: { hourlyRate: String(p.hourlyRate), locPerHour: String(p.locPerHour) } };
+        const next = { ...prev, [key]: { hourlyRate: String(p.hourlyRate), locPerHour: String(p.locPerHour) } };
         persistCustomRates(next);
         return next;
       });
@@ -320,25 +391,28 @@ function RoiSettings() {
 
   function updateField(field: keyof CustomRateEntry, value: string) {
     setCustomRates((prev) => {
-      const next = { ...prev, [activeRole]: { ...currentCustom, [field]: value } };
+      const next = { ...prev, [customKey]: { ...currentCustom, [field]: value } };
       persistCustomRates(next);
       return next;
     });
   }
 
   function handleSave() {
-    const preset = ROLE_PRESETS.find((p) => p.value === activeRole)!;
     if (mode === "preset") {
-      save.mutate({ role: activeRole, hourlyRate: preset.hourlyRate, locPerHour: preset.locPerHour });
+      save.mutate({ role: activeRole, hourlyRate: presetData.hourlyRate, locPerHour: presetData.locPerHour, currency: market.currency, fxRateToUsd: market.fxRateToUsd });
       return;
     }
     const hr = Number(currentCustom.hourlyRate);
     const lph = Number(currentCustom.locPerHour);
     if (!isFinite(hr) || hr <= 0 || !isFinite(lph) || lph <= 0) return;
-    save.mutate({ role: activeRole, hourlyRate: hr, locPerHour: lph });
+    save.mutate({ role: activeRole, hourlyRate: hr, locPerHour: lph, currency: market.currency, fxRateToUsd: market.fxRateToUsd });
   }
 
-  const presetData = ROLE_PRESETS.find((p) => p.value === activeRole);
+  const hasCustomDot = (p: MarketPreset) => {
+    const key = `${marketId}:${p.value}`;
+    return mode === "custom" && !!customRates[key] &&
+      !isMarketDefault(presets, p.value, Number(customRates[key]!.hourlyRate), Number(customRates[key]!.locPerHour));
+  };
 
   return (
     <section className="card p-6">
@@ -346,13 +420,41 @@ function RoiSettings() {
       <h3 className="display-card mb-1">Developer rate card</h3>
       <p className="body-sm mb-5" style={{ color: "var(--color-ink-muted)" }}>
         Used to estimate time saved and ROI on the Overview page.
-        Rates from{" "}
-        <a href="https://www.bls.gov/oes/current/oes151252.htm" target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-develop)" }}>
-          BLS OES May 2024
-        </a>{" "}
-        (US Software Developers) — percentile salary × 1.3 loaded cost ÷ 2,080 hr/yr.
         LOC/hr from McConnell <em>Code Complete §28</em> (focused coding session, not whole-day average).
       </p>
+
+      {/* Market selector */}
+      <div className="mb-5">
+        <div className="mono-label mb-2" style={{ color: "var(--color-ink-muted)" }}>market</div>
+        <div className="card-flat inline-flex p-0.5" role="tablist" aria-label="Market">
+          {MARKETS.map((m) => {
+            const active = marketId === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                role="tab"
+                aria-selected={active ? "true" : "false"}
+                onClick={() => handleMarketChange(m.id)}
+                className="px-4 h-8 text-[13px] font-medium rounded-[4px] font-mono transition-colors flex items-center gap-1.5"
+                style={{
+                  background: active ? "var(--color-ink)" : "transparent",
+                  color: active ? "var(--color-surface)" : "var(--color-ink-soft)",
+                }}
+              >
+                <span>{m.flag}</span>
+                <span>{m.label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="body-sm mt-2" style={{ color: "var(--color-ink-muted)" }}>
+          <a href={market.sourceUrl} target="_blank" rel="noopener noreferrer" style={{ color: "var(--color-develop)" }}>
+            {market.source}
+          </a>
+          {" — "}{market.sourceNote}
+        </p>
+      </div>
 
       {/* Mode toggle */}
       <div className="flex gap-4 mb-5">
@@ -362,29 +464,20 @@ function RoiSettings() {
             className="flex items-center gap-2 cursor-pointer select-none"
             style={{ color: mode === m ? "var(--color-ink)" : "var(--color-ink-muted)" }}
           >
-            <input
-              type="radio"
-              name="roi-mode"
-              value={m}
-              checked={mode === m}
-              onChange={() => setMode(m)}
-              className="accent-ink"
-            />
+            <input type="radio" name="roi-mode" value={m} checked={mode === m} onChange={() => setMode(m)} className="accent-ink" />
             <span className="font-mono text-[13px] font-medium">
-              {m === "preset" ? "BLS OES defaults" : "Custom rate card"}
+              {m === "preset" ? `${market.source} defaults` : "Custom rate card"}
             </span>
           </label>
         ))}
       </div>
 
-      {/* Role tabs — shared between both modes */}
+      {/* Role tabs */}
       <div className="mb-4">
         <div className="mono-label mb-2" style={{ color: "var(--color-ink-muted)" }}>role</div>
         <div className="card-flat inline-flex p-0.5" role="tablist" aria-label="Developer role">
-          {ROLE_PRESETS.map((p) => {
+          {presets.map((p) => {
             const active = activeRole === p.value;
-            const hasCustom = mode === "custom" && customRates[p.value] &&
-              !isBlsDefault(p.value, Number(customRates[p.value]!.hourlyRate), Number(customRates[p.value]!.locPerHour));
             return (
               <button
                 key={p.value}
@@ -399,7 +492,7 @@ function RoiSettings() {
                 }}
               >
                 {p.label}
-                {hasCustom && (
+                {hasCustomDot(p) && (
                   <span
                     className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full"
                     style={{ background: active ? "var(--color-surface)" : "var(--color-develop)" }}
@@ -414,34 +507,39 @@ function RoiSettings() {
 
       {/* Rate display / inputs */}
       {mode === "preset" ? (
-        presetData && (
-          <div className="grid grid-cols-3 gap-3">
-            <div className="p-3 rounded-[6px]" style={{ background: "var(--color-surface-tint)", boxShadow: "var(--shadow-ring-light)" }}>
-              <div className="mono-label mb-1" style={{ color: "var(--color-ink-muted)" }}>experience</div>
-              <div className="font-mono text-[14px]" style={{ color: "var(--color-ink)" }}>{presetData.sub}</div>
-            </div>
-            <div className="p-3 rounded-[6px]" style={{ background: "var(--color-surface-tint)", boxShadow: "var(--shadow-ring-light)" }}>
-              <div className="mono-label mb-1" style={{ color: "var(--color-ink-muted)" }}>hourly rate</div>
-              <div className="font-mono text-[14px]" style={{ color: "var(--color-ink)" }}>${presetData.hourlyRate}/hr</div>
-            </div>
-            <div className="p-3 rounded-[6px]" style={{ background: "var(--color-surface-tint)", boxShadow: "var(--shadow-ring-light)" }}>
-              <div className="mono-label mb-1" style={{ color: "var(--color-ink-muted)" }}>LOC / hr</div>
-              <div className="font-mono text-[14px]" style={{ color: "var(--color-ink)" }}>{presetData.locPerHour}</div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="p-3 rounded-[6px]" style={{ background: "var(--color-surface-tint)", boxShadow: "var(--shadow-ring-light)" }}>
+            <div className="mono-label mb-1" style={{ color: "var(--color-ink-muted)" }}>experience</div>
+            <div className="font-mono text-[14px]" style={{ color: "var(--color-ink)" }}>{presetData.sub}</div>
+          </div>
+          <div className="p-3 rounded-[6px]" style={{ background: "var(--color-surface-tint)", boxShadow: "var(--shadow-ring-light)" }}>
+            <div className="mono-label mb-1" style={{ color: "var(--color-ink-muted)" }}>hourly rate</div>
+            <div className="font-mono text-[14px]" style={{ color: "var(--color-ink)" }}>
+              {market.symbol}{presetData.hourlyRate}/hr
+              {market.currency !== "USD" && (
+                <span className="text-[11px] ml-1" style={{ color: "var(--color-ink-muted)" }}>
+                  ≈ ${(presetData.hourlyRate / market.fxRateToUsd).toFixed(1)}/hr USD
+                </span>
+              )}
             </div>
           </div>
-        )
+          <div className="p-3 rounded-[6px]" style={{ background: "var(--color-surface-tint)", boxShadow: "var(--shadow-ring-light)" }}>
+            <div className="mono-label mb-1" style={{ color: "var(--color-ink-muted)" }}>LOC / hr</div>
+            <div className="font-mono text-[14px]" style={{ color: "var(--color-ink)" }}>{presetData.locPerHour}</div>
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="mono-label block mb-1.5" style={{ color: "var(--color-ink-muted)" }}>
-              hourly rate ($/hr)
+              hourly rate ({market.symbol}/hr)
             </label>
             <input
               type="number"
               min={1}
-              max={10000}
-              title="Hourly rate in USD"
-              placeholder={String(presetData?.hourlyRate ?? 105)}
+              max={1000000}
+              title={`Hourly rate in ${market.currency}`}
+              placeholder={String(presetData.hourlyRate)}
               value={currentCustom.hourlyRate}
               onChange={(e) => updateField("hourlyRate", e.target.value)}
               className="h-9 px-3 rounded-[6px] font-mono text-[13px] w-full"
@@ -449,15 +547,13 @@ function RoiSettings() {
             />
           </div>
           <div>
-            <label className="mono-label block mb-1.5" style={{ color: "var(--color-ink-muted)" }}>
-              LOC / hour
-            </label>
+            <label className="mono-label block mb-1.5" style={{ color: "var(--color-ink-muted)" }}>LOC / hour</label>
             <input
               type="number"
               min={1}
               max={10000}
               title="Lines of code per hour"
-              placeholder={String(presetData?.locPerHour ?? 70)}
+              placeholder={String(presetData.locPerHour)}
               value={currentCustom.locPerHour}
               onChange={(e) => updateField("locPerHour", e.target.value)}
               className="h-9 px-3 rounded-[6px] font-mono text-[13px] w-full"
@@ -468,15 +564,10 @@ function RoiSettings() {
       )}
 
       <div className="flex items-center gap-3 mt-5">
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={handleSave}
-          disabled={save.isPending}
-        >
+        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={save.isPending}>
           {save.isPending ? "Saving…" : "Save"}
         </button>
-        {mode === "custom" && presetData && (
+        {mode === "custom" && (
           <button
             type="button"
             className="btn btn-secondary text-[12px]"
@@ -485,7 +576,7 @@ function RoiSettings() {
               updateField("locPerHour", String(presetData.locPerHour));
             }}
           >
-            Reset to BLS defaults
+            Reset to {market.source} defaults
           </button>
         )}
       </div>

@@ -163,8 +163,8 @@ export const api = {
     }),
   deleteGithubToken: () => j<{ ok: boolean }>(`/settings/github/token`, { method: "DELETE" }),
   getRoiConfig: () =>
-    j<{ role: string; hourlyRate: number; locPerHour: number }>(`/settings/roi`),
-  setRoiConfig: (cfg: { role: string; hourlyRate: number; locPerHour: number }) =>
+    j<{ role: string; hourlyRate: number; locPerHour: number; currency: "USD" | "THB"; fxRateToUsd: number }>(`/settings/roi`),
+  setRoiConfig: (cfg: { role: string; hourlyRate: number; locPerHour: number; currency?: "USD" | "THB"; fxRateToUsd?: number }) =>
     j<{ ok: boolean }>(`/settings/roi`, {
       method: "POST",
       body: JSON.stringify(cfg),

@@ -100,6 +100,8 @@ export default function OverviewPage() {
             hourlyRate={roiCfg.data?.hourlyRate ?? 105}
             locPerHour={roiCfg.data?.locPerHour ?? 70}
             role={roiCfg.data?.role ?? "senior"}
+            currency={roiCfg.data?.currency ?? "USD"}
+            fxRateToUsd={roiCfg.data?.fxRateToUsd ?? 1}
           />
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-10">
@@ -210,12 +212,16 @@ function RoiSection({
   hourlyRate,
   locPerHour,
   role,
+  currency = "USD",
+  fxRateToUsd = 1,
 }: {
   locAttributed: number;
   totalCostUsd: number;
   hourlyRate: number;
   locPerHour: number;
   role: string;
+  currency?: "USD" | "THB";
+  fxRateToUsd?: number;
 }) {
   if (locAttributed === 0 || totalCostUsd === 0) return null;
 
@@ -225,10 +231,12 @@ function RoiSection({
     onSuccess: () => qc.invalidateQueries({ queryKey: ["roiConfig"] }),
   });
 
+  const symbol = currency === "THB" ? "฿" : "$";
   const timeSavedHr = locAttributed / locPerHour;
   const valueSaved = timeSavedHr * hourlyRate;
-  const roiPct = ((valueSaved - totalCostUsd) / totalCostUsd) * 100;
-  const multiplier = valueSaved / totalCostUsd;
+  const valueSavedUsd = valueSaved / fxRateToUsd;
+  const roiPct = ((valueSavedUsd - totalCostUsd) / totalCostUsd) * 100;
+  const multiplier = valueSavedUsd / totalCostUsd;
 
   const activePreset = ROLE_PRESETS.find((p) => p.value === role);
 
@@ -273,7 +281,7 @@ function RoiSection({
             </Link>
           ) : activePreset ? (
             <span className="font-mono text-[11px]" style={{ color: "var(--color-ink-muted)" }}>
-              ${activePreset.hourlyRate}/hr · {activePreset.locPerHour} LOC/hr
+              {symbol}{activePreset.hourlyRate}/hr · {activePreset.locPerHour} LOC/hr
             </span>
           ) : null}
         </div>
@@ -288,8 +296,8 @@ function RoiSection({
         />
         <KpiCard
           label="value saved"
-          value={fmtUsd(valueSaved, 0)}
-          sub={`${fmtNum(timeSavedHr, 1)} hr × $${hourlyRate}/hr`}
+          value={`${symbol}${fmtNum(valueSaved, 0)}`}
+          sub={`${fmtNum(timeSavedHr, 1)} hr × ${symbol}${hourlyRate}/hr`}
           accent="develop"
         />
         <KpiCard
@@ -301,7 +309,7 @@ function RoiSection({
         <KpiCard
           label="claude spend"
           value={fmtUsd(totalCostUsd)}
-          sub={`vs ${fmtUsd(valueSaved, 0)} dev-time equivalent`}
+          sub={`vs ${symbol}${fmtNum(valueSavedUsd, 0)} USD dev-time`}
           accent="ship"
         />
       </div>
@@ -315,18 +323,13 @@ function RoiSection({
         }}
       >
         <span className="pill pill-ink mr-2">methodology</span>
-        ${hourlyRate}/hr (BLS OES May 2024, loaded ×1.3 ÷ 2,080 hr/yr)
+        {symbol}{hourlyRate}/hr{currency !== "USD" && ` ≈ $${(hourlyRate / fxRateToUsd).toFixed(1)}/hr USD`}
         {" · "}{locPerHour} LOC/hr (McConnell <em>Code Complete</em> §28)
         {" · "}LOC = additions + deletions on AI-assisted commits (churn, not net)
         {" · "}
-        <a
-          href="https://www.bls.gov/oes/current/oes151252.htm"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: "var(--color-develop)" }}
-        >
-          BLS OES 15-1252
-        </a>
+        <Link to="/settings" style={{ color: "var(--color-develop)" }}>
+          rate card settings →
+        </Link>
         {" · "}
         <Link to="/settings" style={{ color: "var(--color-develop)" }}>
           custom rate →
