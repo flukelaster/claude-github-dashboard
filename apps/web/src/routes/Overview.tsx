@@ -199,11 +199,12 @@ function cumulate<T extends { date: string; costUsd: number }>(data: T[]) {
   return data.map((d) => ({ ...d, cumCost: (c += d.costUsd) }));
 }
 
+// JobsDB Thailand Salary Guide 2024, Bangkok IT market, ×1.3 loaded ÷ 2,080 hr/yr
 const ROLE_PRESETS = [
-  { value: "junior", label: "Junior", sub: "0–2 yr", hourlyRate: 55,  locPerHour: 30 },
-  { value: "mid",    label: "Mid",    sub: "2–5 yr", hourlyRate: 83,  locPerHour: 50 },
-  { value: "senior", label: "Senior", sub: "5+ yr",  hourlyRate: 105, locPerHour: 70 },
-  { value: "lead",   label: "Lead",   sub: "Staff",  hourlyRate: 131, locPerHour: 60 },
+  { value: "junior", label: "Junior", sub: "0–2 yr", hourlyRate: 262,  locPerHour: 30 },
+  { value: "mid",    label: "Mid",    sub: "2–5 yr", hourlyRate: 487,  locPerHour: 50 },
+  { value: "senior", label: "Senior", sub: "5+ yr",  hourlyRate: 825,  locPerHour: 70 },
+  { value: "lead",   label: "Lead",   sub: "Staff",  hourlyRate: 1276, locPerHour: 60 },
 ] as const;
 
 function RoiSection({

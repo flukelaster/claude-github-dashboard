@@ -19,7 +19,7 @@ const roiInput = z.object({
 
 export type RoiConfig = z.infer<typeof roiInput>;
 
-const ROI_DEFAULT: RoiConfig = { role: "senior", hourlyRate: 105, locPerHour: 70, currency: "USD", fxRateToUsd: 1 };
+const ROI_DEFAULT: RoiConfig = { role: "senior", hourlyRate: 825, locPerHour: 70, currency: "THB", fxRateToUsd: 35 };
 
 export const settingsRoutes = new Hono();
 
