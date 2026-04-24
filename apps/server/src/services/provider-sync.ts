@@ -19,10 +19,7 @@ export interface ProviderSyncStats {
 /**
  * Provider-agnostic sync: for every repo with a remote owner/name configured for this
  * provider, replace local commit data with remote data, upsert PRs/MRs, and refresh
- * language stats.
- *
- * Phase 1: only GitHub repos (provider col doesn't exist yet — all rows with
- * github_owner/github_name are implicitly GitHub). Phase 2 adds provider column.
+ * language stats. Skips repos with sync_enabled=0 or opted_out=1.
  */
 export async function syncProvider(
   provider: GitProvider,
@@ -49,22 +46,25 @@ export async function syncProvider(
   const since = subDays(new Date(), opts.sinceDays ?? 90);
   const allRepos = await db.select().from(repos).all();
 
-  // Phase 1: GitHub is the only provider, matches any row with github_owner/github_name.
-  // Phase 2: filter by repos.provider === provider.name and read remote_owner/remote_name.
   const eligible = allRepos.filter(
-    (r) => provider.name === "github" && r.githubOwner && r.githubName && !r.optedOut
+    (r) =>
+      r.provider === provider.name &&
+      r.remoteOwner &&
+      r.remoteName &&
+      !r.optedOut &&
+      r.syncEnabled
   );
 
   // Dedupe by remote full name — prefer the shortest local_path (canonical clone).
   const seen = new Map<string, (typeof eligible)[number]>();
   for (const r of eligible) {
-    const key = `${r.githubOwner}/${r.githubName}`.toLowerCase();
+    const key = `${r.remoteOwner}/${r.remoteName}`.toLowerCase();
     const prev = seen.get(key);
     if (!prev || r.localPath.length < prev.localPath.length) seen.set(key, r);
   }
   // Mark duplicates opted-out.
   for (const r of eligible) {
-    const key = `${r.githubOwner}/${r.githubName}`.toLowerCase();
+    const key = `${r.remoteOwner}/${r.remoteName}`.toLowerCase();
     const canonical = seen.get(key);
     if (canonical && canonical.id !== r.id) {
       await db.update(repos).set({ optedOut: true }).where(eq(repos.id, r.id));
@@ -72,8 +72,8 @@ export async function syncProvider(
   }
 
   for (const r of seen.values()) {
-    const owner = r.githubOwner!;
-    const name = r.githubName!;
+    const owner = r.remoteOwner!;
+    const name = r.remoteName!;
     const label = `${owner}/${name}`;
 
     // ── Commits ──

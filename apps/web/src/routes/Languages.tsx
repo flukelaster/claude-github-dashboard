@@ -139,7 +139,7 @@ export default function LanguagesPage() {
                   className="mono-label mb-4"
                   style={{ color: "var(--color-ink-muted)" }}
                 >
-                  {r.githubOwner ? `${r.githubOwner}/${r.githubName}` : "local"} · {fmtBytes(r.totalBytes)}
+                  {r.remoteOwner ? `${r.remoteOwner}/${r.remoteName}` : "local"} · {fmtBytes(r.totalBytes)}
                   {r.totalLoc > 0 && ` · ${fmtCompact(r.totalLoc)} LOC`}
                 </div>
                 <StackedBar

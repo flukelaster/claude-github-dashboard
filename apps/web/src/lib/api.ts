@@ -44,8 +44,9 @@ export const api = {
       {
         id: number;
         localPath: string;
-        githubOwner: string | null;
-        githubName: string | null;
+        provider: "github" | "gitlab";
+        remoteOwner: string | null;
+        remoteName: string | null;
         defaultBranch: string | null;
         commitCount: number;
         totalLoc: number;
@@ -56,6 +57,7 @@ export const api = {
         aiAdditions: number;
         aiDeletions: number;
         lastSyncedAt: string | null;
+        syncEnabled: boolean;
       }[]
     >(`/repos`),
   productivity: (range: string) =>
@@ -71,8 +73,9 @@ export const api = {
       repo: {
         id: number;
         localPath: string;
-        githubOwner: string | null;
-        githubName: string | null;
+        provider: "github" | "gitlab";
+        remoteOwner: string | null;
+        remoteName: string | null;
         lastSyncedAt: string | null;
         totals: { additions: number; deletions: number; netLoc: number; commitCount: number };
         windowTotals: {
@@ -138,8 +141,9 @@ export const api = {
       byRepo: {
         repoId: number;
         localPath: string;
-        githubOwner: string | null;
-        githubName: string | null;
+        provider: "github" | "gitlab";
+        remoteOwner: string | null;
+        remoteName: string | null;
         totalBytes: number;
         totalLoc: number;
         languages: {

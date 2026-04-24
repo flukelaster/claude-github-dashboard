@@ -228,8 +228,9 @@ export async function getRepos(): Promise<
   {
     id: number;
     localPath: string;
-    githubOwner: string | null;
-    githubName: string | null;
+    provider: "github" | "gitlab";
+    remoteOwner: string | null;
+    remoteName: string | null;
     defaultBranch: string | null;
     commitCount: number;
     totalLoc: number;
@@ -241,16 +242,19 @@ export async function getRepos(): Promise<
     aiDeletions: number;
     avgCostPerCommit: number | null;
     lastSyncedAt: string | null;
+    syncEnabled: boolean;
   }[]
 > {
   return db.all(sql`
     SELECT
       r.id,
       r.local_path AS localPath,
-      r.github_owner AS githubOwner,
-      r.github_name AS githubName,
+      r.provider AS provider,
+      r.remote_owner AS remoteOwner,
+      r.remote_name AS remoteName,
       r.default_branch AS defaultBranch,
       r.last_synced_at AS lastSyncedAt,
+      r.sync_enabled AS syncEnabled,
       COALESCE(c.commit_count, 0) AS commitCount,
       COALESCE(c.total_loc, 0) AS totalLoc,
       COALESCE(c.adds, 0) AS additions,
@@ -284,8 +288,9 @@ export async function getRepoDetail(id: number, days: number): Promise<
       repo: {
         id: number;
         localPath: string;
-        githubOwner: string | null;
-        githubName: string | null;
+        provider: "github" | "gitlab";
+        remoteOwner: string | null;
+        remoteName: string | null;
         lastSyncedAt: string | null;
         totals: { additions: number; deletions: number; netLoc: number; commitCount: number };
         windowTotals: {
@@ -327,10 +332,11 @@ export async function getRepoDetail(id: number, days: number): Promise<
   const repo = db.all<{
     id: number;
     local_path: string;
-    github_owner: string | null;
-    github_name: string | null;
+    provider: "github" | "gitlab";
+    remote_owner: string | null;
+    remote_name: string | null;
     last_synced_at: string | null;
-  }>(sql`SELECT id, local_path, github_owner, github_name, last_synced_at FROM repos WHERE id = ${id}`)[0];
+  }>(sql`SELECT id, local_path, provider, remote_owner, remote_name, last_synced_at FROM repos WHERE id = ${id}`)[0];
   if (!repo) return null;
   const since = rangeStart(days);
   const commitRows = db.all<{
@@ -435,8 +441,9 @@ export async function getRepoDetail(id: number, days: number): Promise<
     repo: {
       id: repo.id,
       localPath: repo.local_path,
-      githubOwner: repo.github_owner,
-      githubName: repo.github_name,
+      provider: repo.provider,
+      remoteOwner: repo.remote_owner,
+      remoteName: repo.remote_name,
       lastSyncedAt: repo.last_synced_at,
       totals: {
         additions: totals.adds,
@@ -567,8 +574,9 @@ export async function getLanguages(): Promise<{
   byRepo: {
     repoId: number;
     localPath: string;
-    githubOwner: string | null;
-    githubName: string | null;
+    provider: "github" | "gitlab";
+    remoteOwner: string | null;
+    remoteName: string | null;
     totalBytes: number;
     totalLoc: number;
     languages: { language: string; color: string | null; bytes: number; loc: number; ratio: number; locRatio: number }[];
@@ -581,11 +589,12 @@ export async function getLanguages(): Promise<{
     loc_count: number;
     color: string | null;
     local_path: string;
-    github_owner: string | null;
-    github_name: string | null;
+    provider: "github" | "gitlab";
+    remote_owner: string | null;
+    remote_name: string | null;
   }>(sql`
     SELECT rl.repo_id, rl.language, rl.bytes, rl.loc_count, rl.color,
-           r.local_path, r.github_owner, r.github_name
+           r.local_path, r.provider, r.remote_owner, r.remote_name
     FROM repo_languages rl
     JOIN repos r ON r.id = rl.repo_id
     WHERE r.opted_out = 0 AND (rl.bytes > 0 OR rl.loc_count > 0)
@@ -607,8 +616,9 @@ export async function getLanguages(): Promise<{
     {
       repoId: number;
       localPath: string;
-      githubOwner: string | null;
-      githubName: string | null;
+      provider: "github" | "gitlab";
+      remoteOwner: string | null;
+      remoteName: string | null;
       totalBytes: number;
       totalLoc: number;
       languages: { language: string; color: string | null; bytes: number; loc: number; ratio: number; locRatio: number }[];
@@ -631,8 +641,9 @@ export async function getLanguages(): Promise<{
     const repo = byRepo.get(r.repo_id) ?? {
       repoId: r.repo_id,
       localPath: r.local_path,
-      githubOwner: r.github_owner,
-      githubName: r.github_name,
+      provider: r.provider,
+      remoteOwner: r.remote_owner,
+      remoteName: r.remote_name,
       totalBytes: 0,
       totalLoc: 0,
       languages: [],

@@ -73,9 +73,9 @@ export default function ReposPage() {
                         </Link>
                       </td>
                       <td className="px-4 py-2.5">
-                        {r.githubOwner ? (
+                        {r.remoteOwner ? (
                           <span className="pill">
-                            {r.githubOwner}/{r.githubName}
+                            {r.remoteOwner}/{r.remoteName}
                           </span>
                         ) : (
                           <span style={{ color: "var(--color-ink-placeholder)" }}>—</span>

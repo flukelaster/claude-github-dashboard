@@ -51,12 +51,15 @@ export const repos = sqliteTable(
   {
     id: integer("id").primaryKey({ autoIncrement: true }),
     localPath: text("local_path").notNull().unique(),
-    githubOwner: text("github_owner"),
-    githubName: text("github_name"),
+    provider: text("provider").$type<"github" | "gitlab">().notNull().default("github"),
+    remoteOwner: text("remote_owner"),
+    remoteName: text("remote_name"),
     defaultBranch: text("default_branch"),
     lastSyncedAt: text("last_synced_at"),
     optedOut: integer("opted_out", { mode: "boolean" }).notNull().default(false),
-  }
+    syncEnabled: integer("sync_enabled", { mode: "boolean" }).notNull().default(true),
+  },
+  (t) => [index("repos_provider_idx").on(t.provider)]
 );
 
 export const commits = sqliteTable(

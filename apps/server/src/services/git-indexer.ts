@@ -79,7 +79,7 @@ async function upsertRepo(localPath: string): Promise<number> {
   }
   const inserted = await db
     .insert(repos)
-    .values({ localPath, githubOwner: owner, githubName: name, defaultBranch, lastSyncedAt: null })
+    .values({ localPath, provider: "github", remoteOwner: owner, remoteName: name, defaultBranch, lastSyncedAt: null })
     .returning({ id: repos.id });
   return inserted[0]!.id;
 }
@@ -213,9 +213,9 @@ export async function syncGit(opts: { sinceDays?: number; skipCommits?: boolean 
     const repoId = await upsertRepo(root);
     const existingRepo = await db.select().from(repos).where(eq(repos.id, repoId)).get();
     if (existingRepo?.optedOut) continue;
-    // skipCommits applies only to repos that HAVE a GitHub remote (since GitHub will handle those).
+    // skipCommits applies only to repos that HAVE a remote (since provider sync will handle those).
     // Repos without a remote always fall back to local git for commit data.
-    const shouldSkip = opts.skipCommits && !!existingRepo?.githubOwner && !!existingRepo?.githubName;
+    const shouldSkip = opts.skipCommits && !!existingRepo?.remoteOwner && !!existingRepo?.remoteName;
     if (!shouldSkip) {
       const c = await indexRepoCommits(repoId, root, sinceDays);
       stats.commitsIngested += c;

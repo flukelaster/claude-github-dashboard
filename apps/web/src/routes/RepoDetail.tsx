@@ -59,7 +59,7 @@ export default function RepoDetailPage() {
       <PageHeader
         eyebrow="repo"
         title={data?.repo.localPath.split(/[\\/]+/).slice(-1)[0] ?? "…"}
-        description={data?.repo.githubOwner ? `${data.repo.githubOwner}/${data.repo.githubName}` : data?.repo.localPath}
+        description={data?.repo.remoteOwner ? `${data.repo.remoteOwner}/${data.repo.remoteName}` : data?.repo.localPath}
         actions={
           <div className="flex items-center gap-2">
             <RangePicker value={range} onChange={setRange} options={["30d", "90d", "180d"]} />
