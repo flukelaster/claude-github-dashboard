@@ -185,6 +185,19 @@ export const api = {
       rateLimit?: { remaining: number; limit: number; resetAt: string };
       error?: string;
     }>(`/settings/providers/${name}/test`),
+  setRepoSyncEnabled: (id: number, enabled: boolean) =>
+    j<{ ok: boolean }>(`/repos/${id}/sync-enabled`, {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }),
+  addRepo: (url: string) =>
+    j<{ ok: boolean; id?: number; provider?: "github" | "gitlab"; alreadyExists?: boolean; error?: string }>(
+      `/repos`,
+      {
+        method: "POST",
+        body: JSON.stringify({ url }),
+      }
+    ),
   getRoiConfig: () =>
     j<{ role: string; hourlyRate: number; locPerHour: number; currency: "USD" | "THB"; fxRateToUsd: number }>(`/settings/roi`),
   setRoiConfig: (cfg: { role: string; hourlyRate: number; locPerHour: number; currency?: "USD" | "THB"; fxRateToUsd?: number }) =>

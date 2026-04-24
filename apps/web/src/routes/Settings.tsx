@@ -103,6 +103,8 @@ export default function SettingsPage() {
 
         <ProvidersSection />
 
+        <TrackedReposSection />
+
         <RoiSettings />
 
         <section className="card p-6">
@@ -409,6 +411,236 @@ function ProviderPanel({
         </form>
       )}
     </div>
+  );
+}
+
+function TrackedReposSection() {
+  const qc = useQueryClient();
+  const repos = useQuery({ queryKey: ["repos"], queryFn: api.repos });
+  const [filterTab, setFilterTab] = useState<ProviderName | "all">("all");
+  const [addUrl, setAddUrl] = useState("");
+
+  const toggle = useMutation({
+    mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) =>
+      api.setRepoSyncEnabled(id, enabled),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["repos"] });
+    },
+    onError: () => toast.error("Failed to update"),
+  });
+
+  const add = useMutation({
+    mutationFn: (url: string) => api.addRepo(url),
+    onSuccess: (res) => {
+      if (!res.ok) {
+        toast.error(res.error ?? "Could not add");
+        return;
+      }
+      setAddUrl("");
+      qc.invalidateQueries({ queryKey: ["repos"] });
+      if (res.alreadyExists) {
+        toast.info("Repository already tracked");
+      } else {
+        toast.success(`Added to ${res.provider ?? "provider"} — run sync to populate`);
+      }
+    },
+    onError: () => toast.error("Failed to add repository"),
+  });
+
+  const all = repos.data ?? [];
+  const filtered = filterTab === "all" ? all : all.filter((r) => r.provider === filterTab);
+  const counts = {
+    all: all.length,
+    github: all.filter((r) => r.provider === "github").length,
+    gitlab: all.filter((r) => r.provider === "gitlab").length,
+  };
+
+  const tabs: { value: ProviderName | "all"; label: string; count: number }[] = [
+    { value: "all", label: "All", count: counts.all },
+    { value: "github", label: "GitHub", count: counts.github },
+    { value: "gitlab", label: "GitLab", count: counts.gitlab },
+  ];
+
+  return (
+    <section className="card p-6">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <div className="mono-label mb-2">tracked repositories</div>
+          <h3 className="display-card mb-1">Which repos to sync</h3>
+          <p className="body-sm" style={{ color: "var(--color-ink-muted)" }}>
+            Discovered repos default to enabled. Disable to skip a repo during provider sync —
+            local git data is preserved, but commits/PRs/languages won't refresh from the remote.
+          </p>
+        </div>
+        <div className="card-flat inline-flex p-0.5" role="tablist" aria-label="Provider filter">
+          {tabs.map((t) => {
+            const isActive = filterTab === t.value;
+            return (
+              <button
+                key={t.value}
+                type="button"
+                role="tab"
+                onClick={() => setFilterTab(t.value)}
+                className="px-3 h-8 text-[13px] font-medium rounded-[4px] font-mono transition-colors"
+                style={{
+                  background: isActive ? "var(--color-ink)" : "transparent",
+                  color: isActive ? "var(--color-surface)" : "var(--color-ink-soft)",
+                }}
+              >
+                {t.label} <span style={{ opacity: 0.6 }}>{t.count}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {repos.isLoading ? (
+        <div className="body-sm" style={{ color: "var(--color-ink-muted)" }}>Loading…</div>
+      ) : filtered.length === 0 ? (
+        <div
+          className="px-4 py-6 rounded-[6px] text-[13px] text-center"
+          style={{
+            background: "var(--color-surface-tint)",
+            color: "var(--color-ink-muted)",
+            boxShadow: "var(--shadow-ring-light)",
+          }}
+        >
+          {all.length === 0
+            ? "No repositories discovered yet. Run sync after using Claude Code, or add one below."
+            : "No repositories for this provider."}
+        </div>
+      ) : (
+        <div className="rounded-[6px] overflow-hidden" style={{ boxShadow: "var(--shadow-ring-light)" }}>
+          <table className="w-full text-[13px]" style={{ borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "var(--color-surface-tint)" }}>
+                <th className="mono-label text-left px-3 py-2" style={{ fontSize: 11 }}>sync</th>
+                <th className="mono-label text-left px-3 py-2" style={{ fontSize: 11 }}>provider</th>
+                <th className="mono-label text-left px-3 py-2" style={{ fontSize: 11 }}>repository</th>
+                <th className="mono-label text-right px-3 py-2" style={{ fontSize: 11 }}>loc</th>
+                <th className="mono-label text-right px-3 py-2" style={{ fontSize: 11 }}>last sync</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((r) => (
+                <tr
+                  key={r.id}
+                  style={{
+                    borderTop: "1px solid var(--color-line)",
+                    opacity: r.syncEnabled ? 1 : 0.5,
+                  }}
+                >
+                  <td className="px-3 py-2.5">
+                    <SyncToggle
+                      enabled={!!r.syncEnabled}
+                      disabled={toggle.isPending}
+                      onChange={(v) => toggle.mutate({ id: r.id, enabled: v })}
+                    />
+                  </td>
+                  <td className="px-3 py-2.5 font-mono" style={{ color: "var(--color-ink-muted)" }}>
+                    {r.provider}
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {r.remoteOwner ? (
+                      <span className="font-mono">
+                        {r.remoteOwner}/{r.remoteName}
+                      </span>
+                    ) : (
+                      <span className="font-mono" style={{ color: "var(--color-ink-placeholder)" }}>
+                        local only
+                      </span>
+                    )}
+                    <div
+                      className="text-[11px] font-mono mt-0.5"
+                      style={{ color: "var(--color-ink-muted)" }}
+                    >
+                      {r.localPath}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono" style={{ fontVariantNumeric: "tabular-nums" }}>
+                    {r.totalLoc > 0 ? r.totalLoc.toLocaleString() : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-right font-mono text-[11px]" style={{ color: "var(--color-ink-muted)" }}>
+                    {r.lastSyncedAt ? new Date(r.lastSyncedAt).toLocaleDateString() : "never"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <form
+        className="mt-5 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const url = addUrl.trim();
+          if (url.length < 4) return;
+          add.mutate(url);
+        }}
+      >
+        <input
+          type="text"
+          placeholder="https://github.com/owner/repo  or  https://gitlab.com/group/project"
+          value={addUrl}
+          onChange={(e) => setAddUrl(e.target.value)}
+          className="flex-1 h-9 px-3 rounded-[6px] font-mono text-[13px]"
+          style={{
+            background: "var(--color-surface)",
+            boxShadow: "var(--shadow-ring-light)",
+            outline: "none",
+          }}
+        />
+        <button
+          type="submit"
+          className="btn btn-secondary"
+          disabled={add.isPending || addUrl.trim().length < 4}
+        >
+          {add.isPending ? "Adding…" : "Add repository"}
+        </button>
+      </form>
+    </section>
+  );
+}
+
+function SyncToggle({
+  enabled,
+  disabled,
+  onChange,
+}: {
+  enabled: boolean;
+  disabled: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={enabled ? "true" : "false"}
+      aria-label={enabled ? "Disable sync" : "Enable sync"}
+      disabled={disabled}
+      onClick={() => onChange(!enabled)}
+      className="relative rounded-full transition-colors"
+      style={{
+        width: 32,
+        height: 18,
+        background: enabled ? "var(--color-develop)" : "var(--color-line)",
+        boxShadow: "var(--shadow-ring-light)",
+      }}
+    >
+      <span
+        className="absolute rounded-full transition-transform"
+        style={{
+          width: 14,
+          height: 14,
+          top: 2,
+          left: 2,
+          background: "var(--color-surface)",
+          transform: enabled ? "translateX(14px)" : "translateX(0)",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.15)",
+        }}
+      />
+    </button>
   );
 }
 
