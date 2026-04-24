@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import PageHeader from "../components/PageHeader";
@@ -21,36 +21,70 @@ function GithubIcon({ size = 16 }: { size?: number }) {
   );
 }
 
-export default function SettingsPage() {
-  const qc = useQueryClient();
-  const status = useQuery({ queryKey: ["syncStatus"], queryFn: api.syncStatus });
-  const token = useQuery({ queryKey: ["ghToken"], queryFn: api.getGithubToken });
+function GitlabIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      height={size}
+      width={size}
+      style={{ flex: "none", lineHeight: 1 }}
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden
+    >
+      <path fill="#E24329" d="M23.955 13.587l-1.342-4.135-2.664-8.189a.455.455 0 00-.867 0L16.418 9.45H7.582L4.919 1.263a.455.455 0 00-.867 0L1.388 9.452.046 13.587a.924.924 0 00.331 1.03L12 23.054l11.624-8.436a.924.924 0 00.331-1.031" />
+      <path fill="#FC6D26" d="M12 23.054l4.418-13.603H7.582L12 23.054z" />
+      <path fill="#E24329" d="M12 23.054L7.582 9.451H1.388L12 23.054z" />
+      <path fill="#FCA326" d="M1.388 9.451L.046 13.587a.924.924 0 00.331 1.03L12 23.054 1.388 9.451z" />
+      <path fill="#E24329" d="M1.388 9.452h6.194L4.919 1.263a.455.455 0 00-.867 0L1.388 9.452z" />
+      <path fill="#FC6D26" d="M12 23.054l4.418-13.603h6.195L12 23.054z" />
+      <path fill="#FCA326" d="M22.613 9.451l1.342 4.136a.924.924 0 01-.331 1.03L12 23.054l10.613-13.603z" />
+      <path fill="#E24329" d="M22.614 9.452h-6.196l2.664-8.189a.455.455 0 01.867 0l2.665 8.189z" />
+    </svg>
+  );
+}
 
-  const [input, setInput] = useState("");
-  const save = useMutation({
-    mutationFn: (t: string) => api.setGithubToken(t),
-    onSuccess: () => {
-      setInput("");
-      qc.invalidateQueries({ queryKey: ["ghToken"] });
-      qc.invalidateQueries({ queryKey: ["githubStatus"] });
-    },
-  });
-  const del = useMutation({
-    mutationFn: api.deleteGithubToken,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["ghToken"] });
-      qc.invalidateQueries({ queryKey: ["githubStatus"] });
-      test.reset();
-    },
-  });
-  const test = useMutation({ mutationFn: api.testGithubConnection });
+type ProviderName = "github" | "gitlab";
+
+interface ProviderMeta {
+  name: ProviderName;
+  label: string;
+  tokenPattern: string;
+  tokenHint: string;
+  docsUrl: string;
+  scopes: string;
+  icon: (size: number) => ReactNode;
+}
+
+const PROVIDERS: readonly ProviderMeta[] = [
+  {
+    name: "github",
+    label: "GitHub",
+    tokenPattern: "ghp_…",
+    tokenHint: "Classic (ghp_…) or fine-grained (github_pat_…) PAT",
+    docsUrl: "https://github.com/settings/tokens",
+    scopes: "repo (read)",
+    icon: (size) => <GithubIcon size={size} />,
+  },
+  {
+    name: "gitlab",
+    label: "GitLab",
+    tokenPattern: "glpat-…",
+    tokenHint: "Personal access token (glpat-…)",
+    docsUrl: "https://gitlab.com/-/user_settings/personal_access_tokens",
+    scopes: "api, read_repository",
+    icon: (size) => <GitlabIcon size={size} />,
+  },
+];
+
+export default function SettingsPage() {
+  const status = useQuery({ queryKey: ["syncStatus"], queryFn: api.syncStatus });
 
   return (
     <div>
       <PageHeader
         eyebrow="settings"
         title="Settings"
-        description="Local-only configuration. No data leaves your machine unless GitHub sync is enabled."
+        description="Local-only configuration. No data leaves your machine unless a provider sync is enabled."
       />
 
       <div className="grid gap-6">
@@ -67,159 +101,7 @@ export default function SettingsPage() {
           </dl>
         </section>
 
-        <section className="card p-6">
-          <div className="flex items-center gap-2 mb-2" style={{ color: "var(--color-ink-muted)" }}>
-            <GithubIcon size={14} />
-            <span className="mono-label">github</span>
-          </div>
-          <h3 className="display-card mb-2">Personal access token</h3>
-          <p className="body-sm mb-4" style={{ color: "var(--color-ink-muted)" }}>
-            Required for GitHub sync (PRs, repo metadata). Scope: <span className="font-mono">repo</span>.
-            Stored in OS keychain via <span className="font-mono">keytar</span>.
-          </p>
-          {token.data?.backend === "memory" && (
-            <div
-              className="mb-4 px-3 py-2 rounded-[6px] text-[13px]"
-              style={{
-                background: "rgba(255, 91, 79, 0.1)",
-                boxShadow: "var(--shadow-ring)",
-                color: "var(--color-ship)",
-              }}
-            >
-              <strong>Warning:</strong> OS keychain unavailable — token will persist only for the current process.
-              Restart will clear it. On Linux install <span className="font-mono">libsecret-1-dev</span>;
-              on other platforms check <span className="font-mono">keytar</span> is built.
-            </div>
-          )}
-
-          {token.data?.hasToken ? (
-            <>
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="pill pill-develop">configured</span>
-                <code className="font-mono text-[13px]" style={{ color: "var(--color-ink-muted)" }}>
-                  {token.data.preview}
-                </code>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => test.mutate()}
-                  disabled={test.isPending}
-                >
-                  {test.isPending ? "Testing…" : "Test connection"}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => del.mutate()}
-                  disabled={del.isPending}
-                >
-                  Remove
-                </button>
-              </div>
-              {test.data && test.data.ok && (
-                <div
-                  className="mt-4 p-3 rounded-[6px] flex items-center gap-3 text-[13px]"
-                  style={{ boxShadow: "var(--shadow-ring-light)", background: "var(--color-surface)" }}
-                >
-                  {test.data.avatarUrl && (
-                    <img
-                      src={test.data.avatarUrl}
-                      alt=""
-                      width={32}
-                      height={32}
-                      style={{ borderRadius: "50%", boxShadow: "var(--shadow-ring-light)" }}
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-mono" style={{ color: "var(--color-ink)" }}>
-                      @{test.data.login}
-                      {test.data.name && (
-                        <span style={{ color: "var(--color-ink-muted)" }}> · {test.data.name}</span>
-                      )}
-                    </div>
-                    {test.data.rateLimit && (
-                      <div
-                        className="mono-label"
-                        style={{ color: "var(--color-ink-muted)", fontVariantNumeric: "tabular-nums" }}
-                      >
-                        rate limit {test.data.rateLimit.remaining}/{test.data.rateLimit.limit} · resets{" "}
-                        {new Date(test.data.rateLimit.resetAt).toLocaleTimeString()}
-                      </div>
-                    )}
-                  </div>
-                  {test.data.profileUrl && (
-                    <a
-                      href={test.data.profileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-secondary"
-                    >
-                      Profile
-                    </a>
-                  )}
-                </div>
-              )}
-              {test.data && !test.data.ok && (
-                <div
-                  className="mt-4 px-3 py-2 rounded-[6px] text-[13px]"
-                  style={{
-                    background: "rgba(255, 91, 79, 0.1)",
-                    boxShadow: "var(--shadow-ring)",
-                    color: "var(--color-ship)",
-                  }}
-                >
-                  <strong>Failed:</strong> {test.data.error ?? "unknown error"}
-                </div>
-              )}
-              {test.isError && (
-                <div
-                  className="mt-4 px-3 py-2 rounded-[6px] text-[13px]"
-                  style={{
-                    background: "rgba(255, 91, 79, 0.1)",
-                    boxShadow: "var(--shadow-ring)",
-                    color: "var(--color-ship)",
-                  }}
-                >
-                  <strong>Request failed:</strong> {String(test.error)}
-                </div>
-              )}
-            </>
-          ) : (
-            <form
-              className="flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (input.trim().length > 10) save.mutate(input.trim());
-              }}
-            >
-              <input
-                type="password"
-                placeholder="ghp_…"
-                autoComplete="off"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                className="flex-1 h-9 px-3 rounded-[6px] font-mono text-[13px]"
-                style={{
-                  background: "var(--color-surface)",
-                  boxShadow: "var(--shadow-ring-light)",
-                  outline: "none",
-                }}
-              />
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={save.isPending || input.trim().length < 10}
-              >
-                {save.isPending ? "Saving…" : "Save"}
-              </button>
-            </form>
-          )}
-          {save.isError && (
-            <p className="body-sm mt-2" style={{ color: "var(--color-ship)" }}>
-              Failed to save. Check the token format.
-            </p>
-          )}
-        </section>
+        <ProvidersSection />
 
         <RoiSettings />
 
@@ -277,6 +159,257 @@ function persistCustomRates(m: CustomRateMap) {
 function isPresetDefault(role: PresetValue, hourlyRate: number, locPerHour: number): boolean {
   const p = ROLE_PRESETS.find((r) => r.value === role);
   return !!p && p.hourlyRate === hourlyRate && p.locPerHour === locPerHour;
+}
+
+function ProvidersSection() {
+  const qc = useQueryClient();
+  const list = useQuery({ queryKey: ["providers"], queryFn: api.listProviders });
+  const [activeTab, setActiveTab] = useState<ProviderName>("github");
+  const [inputs, setInputs] = useState<Record<ProviderName, string>>({ github: "", gitlab: "" });
+
+  const save = useMutation({
+    mutationFn: ({ name, token }: { name: ProviderName; token: string }) =>
+      api.setProviderToken(name, token),
+    onSuccess: (res, vars) => {
+      if (!res.ok) {
+        toast.error(res.error ?? "Invalid token");
+        return;
+      }
+      setInputs((prev) => ({ ...prev, [vars.name]: "" }));
+      qc.invalidateQueries({ queryKey: ["providers"] });
+      qc.invalidateQueries({ queryKey: ["githubStatus"] });
+      qc.invalidateQueries({ queryKey: [`providerTest-${vars.name}`] });
+      toast.success(`${vars.name === "github" ? "GitHub" : "GitLab"} token saved`);
+    },
+    onError: () => toast.error("Failed to save token"),
+  });
+
+  const del = useMutation({
+    mutationFn: (name: ProviderName) => api.deleteProviderToken(name),
+    onSuccess: (_, name) => {
+      qc.invalidateQueries({ queryKey: ["providers"] });
+      qc.invalidateQueries({ queryKey: ["githubStatus"] });
+      qc.invalidateQueries({ queryKey: [`providerTest-${name}`] });
+      toast.success("Token removed");
+    },
+  });
+
+  const active = PROVIDERS.find((p) => p.name === activeTab)!;
+  const activeData = list.data?.providers.find((p) => p.name === activeTab);
+  const backend = list.data?.backend;
+
+  return (
+    <section className="card p-6">
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <div className="mono-label mb-2">providers</div>
+          <h3 className="display-card mb-1">Remote git providers</h3>
+          <p className="body-sm" style={{ color: "var(--color-ink-muted)" }}>
+            Configure personal access tokens for commit, PR/MR, and language sync.
+            Each provider is optional — local git fallback keeps working without tokens.
+          </p>
+        </div>
+        <div className="card-flat inline-flex p-0.5" role="tablist" aria-label="Provider">
+          {PROVIDERS.map((p) => {
+            const isActive = activeTab === p.name;
+            const hasToken = list.data?.providers.find((x) => x.name === p.name)?.hasToken;
+            return (
+              <button
+                key={p.name}
+                type="button"
+                role="tab"
+                aria-selected={isActive ? "true" : "false"}
+                onClick={() => setActiveTab(p.name)}
+                className="relative px-3 h-8 text-[13px] font-medium rounded-[4px] font-mono flex items-center gap-2 transition-colors"
+                style={{
+                  background: isActive ? "var(--color-ink)" : "transparent",
+                  color: isActive ? "var(--color-surface)" : "var(--color-ink-soft)",
+                }}
+              >
+                {p.icon(14)}
+                {p.label}
+                {hasToken && (
+                  <span
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: isActive ? "var(--color-surface)" : "var(--color-develop)" }}
+                    title="token configured"
+                  />
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {backend === "memory" && (
+        <div
+          className="mb-4 px-3 py-2 rounded-[6px] text-[13px]"
+          style={{
+            background: "rgba(255, 91, 79, 0.1)",
+            boxShadow: "var(--shadow-ring)",
+            color: "var(--color-ship)",
+          }}
+        >
+          <strong>Warning:</strong> OS keychain unavailable — tokens persist only for the current process.
+          Restart will clear them. On Linux install <span className="font-mono">libsecret-1-dev</span>.
+        </div>
+      )}
+
+      <ProviderPanel
+        meta={active}
+        hasToken={!!activeData?.hasToken}
+        preview={activeData?.preview ?? null}
+        input={inputs[activeTab]}
+        onInputChange={(v) => setInputs((p) => ({ ...p, [activeTab]: v }))}
+        onSave={() => {
+          const t = inputs[activeTab].trim();
+          if (t.length < 10) return;
+          save.mutate({ name: activeTab, token: t });
+        }}
+        onDelete={() => del.mutate(activeTab)}
+        isSaving={save.isPending}
+        isDeleting={del.isPending}
+      />
+    </section>
+  );
+}
+
+function ProviderPanel({
+  meta,
+  hasToken,
+  preview,
+  input,
+  onInputChange,
+  onSave,
+  onDelete,
+  isSaving,
+  isDeleting,
+}: {
+  meta: ProviderMeta;
+  hasToken: boolean;
+  preview: string | null;
+  input: string;
+  onInputChange: (v: string) => void;
+  onSave: () => void;
+  onDelete: () => void;
+  isSaving: boolean;
+  isDeleting: boolean;
+}) {
+  const test = useQuery({
+    queryKey: [`providerTest-${meta.name}`, hasToken],
+    queryFn: () => api.testProvider(meta.name),
+    enabled: hasToken,
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  return (
+    <div>
+      <p className="body-sm mb-4" style={{ color: "var(--color-ink-muted)" }}>
+        {meta.tokenHint}. Scopes:{" "}
+        <span className="font-mono" style={{ color: "var(--color-ink-soft)" }}>
+          {meta.scopes}
+        </span>
+        . Generate at{" "}
+        <a
+          href={meta.docsUrl}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: "var(--color-develop)" }}
+        >
+          {meta.docsUrl.replace(/^https?:\/\//, "")}
+        </a>
+        .
+      </p>
+
+      {hasToken ? (
+        <>
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="pill pill-develop">configured</span>
+            <code className="font-mono text-[13px]" style={{ color: "var(--color-ink-muted)" }}>
+              {preview}
+            </code>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => test.refetch()}
+              disabled={test.isFetching}
+            >
+              {test.isFetching ? "Testing…" : "Test connection"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={onDelete}
+              disabled={isDeleting}
+            >
+              Remove
+            </button>
+          </div>
+          {test.data && test.data.ok && (
+            <div
+              className="mt-4 p-3 rounded-[6px] text-[13px]"
+              style={{ boxShadow: "var(--shadow-ring-light)", background: "var(--color-surface)" }}
+            >
+              <div className="font-mono" style={{ color: "var(--color-ink)" }}>
+                @{test.data.user}
+              </div>
+              {test.data.rateLimit && (
+                <div
+                  className="mono-label mt-1"
+                  style={{ color: "var(--color-ink-muted)", fontVariantNumeric: "tabular-nums" }}
+                >
+                  rate limit {test.data.rateLimit.remaining}/{test.data.rateLimit.limit} · resets{" "}
+                  {new Date(test.data.rateLimit.resetAt).toLocaleTimeString()}
+                </div>
+              )}
+            </div>
+          )}
+          {test.data && !test.data.ok && (
+            <div
+              className="mt-4 px-3 py-2 rounded-[6px] text-[13px]"
+              style={{
+                background: "rgba(255, 91, 79, 0.1)",
+                boxShadow: "var(--shadow-ring)",
+                color: "var(--color-ship)",
+              }}
+            >
+              <strong>Failed:</strong> {test.data.error ?? "unknown error"}
+            </div>
+          )}
+        </>
+      ) : (
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            onSave();
+          }}
+        >
+          <input
+            type="password"
+            placeholder={meta.tokenPattern}
+            autoComplete="off"
+            value={input}
+            onChange={(e) => onInputChange(e.target.value)}
+            className="flex-1 h-9 px-3 rounded-[6px] font-mono text-[13px]"
+            style={{
+              background: "var(--color-surface)",
+              boxShadow: "var(--shadow-ring-light)",
+              outline: "none",
+            }}
+          />
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={isSaving || input.trim().length < 10}
+          >
+            {isSaving ? "Saving…" : "Save"}
+          </button>
+        </form>
+      )}
+    </div>
+  );
 }
 
 function RoiSettings() {

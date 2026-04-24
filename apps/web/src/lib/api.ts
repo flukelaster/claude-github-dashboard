@@ -166,6 +166,25 @@ export const api = {
       body: JSON.stringify({ token }),
     }),
   deleteGithubToken: () => j<{ ok: boolean }>(`/settings/github/token`, { method: "DELETE" }),
+  listProviders: () =>
+    j<{
+      providers: { name: "github" | "gitlab"; label: string; hasToken: boolean; preview: string | null }[];
+      backend: "keytar" | "memory";
+    }>(`/settings/providers`),
+  setProviderToken: (name: "github" | "gitlab", token: string) =>
+    j<{ ok: boolean; error?: string }>(`/settings/providers/${name}/token`, {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+  deleteProviderToken: (name: "github" | "gitlab") =>
+    j<{ ok: boolean }>(`/settings/providers/${name}/token`, { method: "DELETE" }),
+  testProvider: (name: "github" | "gitlab") =>
+    j<{
+      ok: boolean;
+      user?: string;
+      rateLimit?: { remaining: number; limit: number; resetAt: string };
+      error?: string;
+    }>(`/settings/providers/${name}/test`),
   getRoiConfig: () =>
     j<{ role: string; hourlyRate: number; locPerHour: number; currency: "USD" | "THB"; fxRateToUsd: number }>(`/settings/roi`),
   setRoiConfig: (cfg: { role: string; hourlyRate: number; locPerHour: number; currency?: "USD" | "THB"; fxRateToUsd?: number }) =>
