@@ -9,6 +9,7 @@ import type {
   ProviderPullRequest,
   ProviderRepoInfo,
 } from "./types.js";
+import { errMsg, isNotFound } from "./utils.js";
 
 const TOKEN_KEY = "gitlab_pat";
 const DEFAULT_HOST = "https://gitlab.com";
@@ -30,10 +31,6 @@ function projectPath(owner: string, name: string): string {
   return `${owner}/${name}`;
 }
 
-function notFoundFromError(msg: string): boolean {
-  return /404|Not Found|does not exist/i.test(msg);
-}
-
 // ─── testAuth ─────────────────────────────────────────────────────────────────
 async function testAuth(): Promise<AuthResult> {
   const client = await getClient();
@@ -47,7 +44,7 @@ async function testAuth(): Promise<AuthResult> {
       // for now. The public gitlab.com limit is 2,000 req/min/user — generous.
     };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: errMsg(e) };
   }
 }
 
@@ -100,8 +97,8 @@ async function fetchCommits(
     });
     return { items, error: null, notFound: false, rateLimitRemaining: null };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { items: [], error: msg, notFound: notFoundFromError(msg), rateLimitRemaining: null };
+    const msg = errMsg(e);
+    return { items: [], error: msg, notFound: isNotFound(msg), rateLimitRemaining: null };
   }
 }
 
@@ -149,8 +146,8 @@ async function fetchPullRequests(
     }
     return { items, error: null, notFound: false, rateLimitRemaining: null };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { items: [], error: msg, notFound: notFoundFromError(msg), rateLimitRemaining: null };
+    const msg = errMsg(e);
+    return { items: [], error: msg, notFound: isNotFound(msg), rateLimitRemaining: null };
   }
 }
 
@@ -175,8 +172,8 @@ async function fetchLanguages(
     }));
     return { items, error: null, notFound: false, rateLimitRemaining: null };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return { items: [], error: msg, notFound: notFoundFromError(msg), rateLimitRemaining: null };
+    const msg = errMsg(e);
+    return { items: [], error: msg, notFound: isNotFound(msg), rateLimitRemaining: null };
   }
 }
 

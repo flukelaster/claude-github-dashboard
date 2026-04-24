@@ -15,7 +15,7 @@ import {
   getSessions,
 } from "../services/analytics.js";
 import { getStatus, runFullSync, subscribe, type SyncEvent } from "../services/sync.js";
-import { getAllProviders, getProvider, type ProviderName } from "../services/providers/index.js";
+import { getAllProviders, getProvider, isProviderName } from "../services/providers/index.js";
 import { db } from "../db/client.js";
 import { repos } from "../db/schema.js";
 import { settingsRoutes } from "./settings.js";
@@ -145,8 +145,8 @@ api.post("/repos", async (c) => {
 });
 
 api.get("/providers/:name/accessible-repos", async (c) => {
-  const name = c.req.param("name") as ProviderName;
-  if (name !== "github" && name !== "gitlab") return c.json({ error: "unknown provider" }, 404);
+  const name = c.req.param("name");
+  if (!isProviderName(name)) return c.json({ error: "unknown provider" }, 404);
   const search = c.req.query("search") ?? undefined;
   const items = await getProvider(name).listAccessibleRepos({ search, perPage: 100 });
   return c.json({ items });

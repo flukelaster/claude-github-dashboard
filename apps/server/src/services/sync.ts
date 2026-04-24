@@ -102,31 +102,35 @@ export async function runFullSync(): Promise<SyncStatus> {
       message: "skipped — no provider tokens configured (Settings → Providers)",
     });
   } else {
-    for (const p of activeProviders) {
-      try {
-        status.source = p.name;
+    // Independent API hosts with separate rate-limit buckets — run providers
+    // in parallel. Status source reflects the fan-out rather than any one.
+    status.source = "providers";
+    await Promise.all(
+      activeProviders.map(async (p) => {
         emit({ type: "start", source: p.name, at: new Date().toISOString() });
-        const r = await syncProvider(p, { sinceDays: 90 });
-        emit({
-          type: "done",
-          source: p.name,
-          at: new Date().toISOString(),
-          stats: {
-            reposSynced: r.reposSynced,
-            prsUpserted: r.prsUpserted,
-            commitsUpserted: r.commitsUpserted,
-            languagesUpserted: r.languagesUpserted,
-            rateLimitRemaining: r.rateLimitRemaining ?? -1,
-            errors: r.errors.length,
-            durationMs: r.durationMs,
-          },
-        });
-        if (r.errors.length) errors.push(`${p.name}: ${r.errors.slice(0, 3).join("; ")}`);
-      } catch (e) {
-        const m = e instanceof Error ? e.message : String(e);
-        emit({ type: "error", source: p.name, at: new Date().toISOString(), message: m });
-      }
-    }
+        try {
+          const r = await syncProvider(p, { sinceDays: 90 });
+          emit({
+            type: "done",
+            source: p.name,
+            at: new Date().toISOString(),
+            stats: {
+              reposSynced: r.reposSynced,
+              prsUpserted: r.prsUpserted,
+              commitsUpserted: r.commitsUpserted,
+              languagesUpserted: r.languagesUpserted,
+              rateLimitRemaining: r.rateLimitRemaining ?? -1,
+              errors: r.errors.length,
+              durationMs: r.durationMs,
+            },
+          });
+          if (r.errors.length) errors.push(`${p.name}: ${r.errors.slice(0, 3).join("; ")}`);
+        } catch (e) {
+          const m = e instanceof Error ? e.message : String(e);
+          emit({ type: "error", source: p.name, at: new Date().toISOString(), message: m });
+        }
+      })
+    );
   }
 
   // 4. Language LOC — walk local filesystem, count lines per language.

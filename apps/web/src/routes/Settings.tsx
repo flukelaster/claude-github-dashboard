@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import type { ProviderName } from "@cgd/shared";
 import PageHeader from "../components/PageHeader";
 import { api } from "../lib/api";
 
@@ -42,8 +43,6 @@ function GitlabIcon({ size = 16 }: { size?: number }) {
     </svg>
   );
 }
-
-type ProviderName = "github" | "gitlab";
 
 interface ProviderMeta {
   name: ProviderName;
@@ -481,13 +480,14 @@ function TrackedReposSection() {
                 type="button"
                 role="tab"
                 onClick={() => setFilterTab(t.value)}
-                className="px-3 h-8 text-[13px] font-medium rounded-[4px] font-mono transition-colors"
+                className="px-3 h-8 text-[13px] font-medium rounded-[4px] font-mono transition-colors flex items-center gap-1.5 whitespace-nowrap leading-none"
                 style={{
                   background: isActive ? "var(--color-ink)" : "transparent",
                   color: isActive ? "var(--color-surface)" : "var(--color-ink-soft)",
                 }}
               >
-                {t.label} <span style={{ opacity: 0.6 }}>{t.count}</span>
+                <span>{t.label}</span>
+                <span style={{ opacity: 0.6 }}>{t.count}</span>
               </button>
             );
           })}

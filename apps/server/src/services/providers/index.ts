@@ -10,6 +10,10 @@ export function getProvider(name: ProviderName): GitProvider {
   return p;
 }
 
+export function isProviderName(v: string): v is ProviderName {
+  return ALL_PROVIDERS.some((p) => p.name === v);
+}
+
 export function getAllProviders(): readonly GitProvider[] {
   return ALL_PROVIDERS;
 }

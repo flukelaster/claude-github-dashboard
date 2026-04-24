@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { settings } from "../db/schema.js";
 import { deleteSecret, getBackend, getSecret, setSecret } from "../services/keychain.js";
-import { getAllProviders, getProvider, type ProviderName } from "../services/providers/index.js";
+import { getAllProviders, getProvider, isProviderName, type ProviderName } from "../services/providers/index.js";
 
 const ROI_KEY = "roi_config";
 
@@ -46,23 +46,22 @@ function providerTokenInput(name: ProviderName) {
   });
 }
 
-function isProviderName(v: string): v is ProviderName {
-  return v === "github" || v === "gitlab";
-}
-
 // ─── New provider-aware endpoints ─────────────────────────────────────────────
 settingsRoutes.get("/providers", async (c) => {
-  const backend = await getBackend();
-  const out = [];
-  for (const p of getAllProviders()) {
-    const token = await getSecret(KEYCHAIN_KEY[p.name]);
-    out.push({
+  const providers = getAllProviders();
+  const [backend, ...tokens] = await Promise.all([
+    getBackend(),
+    ...providers.map((p) => getSecret(KEYCHAIN_KEY[p.name])),
+  ]);
+  const out = providers.map((p, i) => {
+    const token = tokens[i] as string | null;
+    return {
       name: p.name,
       label: PROVIDER_LABEL[p.name],
       hasToken: !!token,
       preview: token ? `…${token.slice(-4)}` : null,
-    });
-  }
+    };
+  });
   return c.json({ providers: out, backend });
 });
 
@@ -99,43 +98,6 @@ settingsRoutes.get("/providers/:name/test", async (c) => {
   const provider = getProvider(name);
   const result = await provider.testAuth();
   return c.json(result);
-});
-
-// ─── Legacy GitHub endpoints (kept as aliases for the current UI) ─────────────
-settingsRoutes.get("/github/token", async (c) => {
-  const t = await getSecret(KEYCHAIN_KEY.github);
-  const backend = await getBackend();
-  return c.json({
-    hasToken: !!t,
-    preview: t ? `…${t.slice(-4)}` : null,
-    backend,
-  });
-});
-
-settingsRoutes.post("/github/token", async (c) => {
-  const body = await c.req.json().catch(() => ({}));
-  const parsed = providerTokenInput("github").safeParse(body);
-  if (!parsed.success) return c.json({ error: "invalid token" }, 400);
-  await setSecret(KEYCHAIN_KEY.github, parsed.data.token);
-  return c.json({ ok: true });
-});
-
-settingsRoutes.delete("/github/token", async (c) => {
-  await deleteSecret(KEYCHAIN_KEY.github);
-  return c.json({ ok: true });
-});
-
-settingsRoutes.get("/github/test", async (c) => {
-  const result = await getProvider("github").testAuth();
-  if (!result.ok) return c.json({ ok: false, error: result.error ?? "auth failed" }, 200);
-  return c.json({
-    ok: true,
-    login: result.user ?? null,
-    name: null,
-    avatarUrl: null,
-    profileUrl: null,
-    rateLimit: result.rateLimit ?? null,
-  });
 });
 
 // ─── ROI config ───────────────────────────────────────────────────────────────

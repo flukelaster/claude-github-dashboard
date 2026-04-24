@@ -156,16 +156,6 @@ export const api = {
         }[];
       }[];
     }>(`/languages`),
-  getGithubToken: () =>
-    j<{ hasToken: boolean; preview: string | null; backend: "keytar" | "memory" }>(
-      `/settings/github/token`
-    ),
-  setGithubToken: (token: string) =>
-    j<{ ok: boolean }>(`/settings/github/token`, {
-      method: "POST",
-      body: JSON.stringify({ token }),
-    }),
-  deleteGithubToken: () => j<{ ok: boolean }>(`/settings/github/token`, { method: "DELETE" }),
   listProviders: () =>
     j<{
       providers: { name: "github" | "gitlab"; label: string; hasToken: boolean; preview: string | null }[];
@@ -205,16 +195,6 @@ export const api = {
       method: "POST",
       body: JSON.stringify(cfg),
     }),
-  testGithubConnection: () =>
-    j<{
-      ok: boolean;
-      login?: string;
-      name?: string | null;
-      avatarUrl?: string;
-      profileUrl?: string;
-      rateLimit?: { remaining: number; limit: number; resetAt: string };
-      error?: string;
-    }>(`/settings/github/test`),
   sync: () => j<{ started: boolean; status: SyncStatus }>(`/sync`, { method: "POST" }),
   syncStatus: () => j<SyncStatus>(`/sync/status`),
 };

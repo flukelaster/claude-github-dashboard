@@ -10,6 +10,7 @@ import type {
   ProviderPullRequest,
   ProviderRepoInfo,
 } from "./types.js";
+import { errMsg, isNotFound } from "./utils.js";
 
 const TOKEN_KEY = "github_pat";
 
@@ -137,9 +138,8 @@ async function fetchCommits(
         };
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      const notFound = /Could not resolve to a Repository/i.test(msg) || /Not Found/i.test(msg);
-      return { items: collected, error: msg, notFound, rateLimitRemaining };
+      const msg = errMsg(e);
+      return { items: collected, error: msg, notFound: isNotFound(msg), rateLimitRemaining };
     }
   }
   return { items: collected, error: null, notFound: false, rateLimitRemaining };
@@ -213,9 +213,8 @@ async function fetchPullRequests(
     }
     return { items, error: null, notFound: false, rateLimitRemaining: resp.rateLimit.remaining };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const notFound = /Could not resolve to a Repository/i.test(msg) || /Not Found/i.test(msg);
-    return { items: [], error: msg, notFound, rateLimitRemaining: null };
+    const msg = errMsg(e);
+    return { items: [], error: msg, notFound: isNotFound(msg), rateLimitRemaining: null };
   }
 }
 
@@ -250,9 +249,8 @@ async function fetchLanguages(
     }));
     return { items, error: null, notFound: false, rateLimitRemaining: resp.rateLimit.remaining };
   } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    const notFound = /Could not resolve to a Repository/i.test(msg);
-    return { items: [], error: msg, notFound, rateLimitRemaining: null };
+    const msg = errMsg(e);
+    return { items: [], error: msg, notFound: isNotFound(msg), rateLimitRemaining: null };
   }
 }
 
@@ -274,7 +272,7 @@ async function testAuth(): Promise<AuthResult> {
       },
     };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: errMsg(e) };
   }
 }
 

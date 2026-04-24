@@ -56,29 +56,41 @@ export async function syncProvider(
   );
 
   // Dedupe by remote full name — prefer the shortest local_path (canonical clone).
+  // Single pass: track the canonical row per key, push losers into a dup list.
   const seen = new Map<string, (typeof eligible)[number]>();
+  const dupIds: number[] = [];
   for (const r of eligible) {
     const key = `${r.remoteOwner}/${r.remoteName}`.toLowerCase();
     const prev = seen.get(key);
-    if (!prev || r.localPath.length < prev.localPath.length) seen.set(key, r);
-  }
-  // Mark duplicates opted-out.
-  for (const r of eligible) {
-    const key = `${r.remoteOwner}/${r.remoteName}`.toLowerCase();
-    const canonical = seen.get(key);
-    if (canonical && canonical.id !== r.id) {
-      await db.update(repos).set({ optedOut: true }).where(eq(repos.id, r.id));
+    if (!prev) {
+      seen.set(key, r);
+    } else if (r.localPath.length < prev.localPath.length) {
+      dupIds.push(prev.id);
+      seen.set(key, r);
+    } else {
+      dupIds.push(r.id);
     }
   }
+  await Promise.all(
+    dupIds.map((id) => db.update(repos).set({ optedOut: true }).where(eq(repos.id, id)))
+  );
 
   for (const r of seen.values()) {
     const owner = r.remoteOwner!;
     const name = r.remoteName!;
     const label = `${owner}/${name}`;
 
+    // Commits, languages, and PRs/MRs are independent remote calls — fetch in parallel.
+    const [commitResult, langResult, prResult] = await Promise.all([
+      provider.fetchCommits(owner, name, { since }),
+      provider.fetchLanguages(owner, name),
+      provider.fetchPullRequests(owner, name, { since }),
+    ]);
+    for (const rl of [commitResult, langResult, prResult]) {
+      if (rl.rateLimitRemaining != null) stats.rateLimitRemaining = rl.rateLimitRemaining;
+    }
+
     // ── Commits ──
-    const commitResult = await provider.fetchCommits(owner, name, { since });
-    if (commitResult.rateLimitRemaining != null) stats.rateLimitRemaining = commitResult.rateLimitRemaining;
     if (commitResult.notFound) {
       stats.errors.push(
         `${label}: token cannot access (SSO / permissions / renamed) — keeping local git data`
@@ -125,8 +137,6 @@ export async function syncProvider(
     }
 
     // ── Languages ──
-    const langResult = await provider.fetchLanguages(owner, name);
-    if (langResult.rateLimitRemaining != null) stats.rateLimitRemaining = langResult.rateLimitRemaining;
     if (!langResult.notFound && !langResult.error) {
       await db.delete(repoLanguages).where(eq(repoLanguages.repoId, r.id)).execute();
       for (const lang of langResult.items) {
@@ -143,8 +153,6 @@ export async function syncProvider(
     }
 
     // ── Pull requests / Merge requests ──
-    const prResult = await provider.fetchPullRequests(owner, name, { since });
-    if (prResult.rateLimitRemaining != null) stats.rateLimitRemaining = prResult.rateLimitRemaining;
     if (!prResult.notFound) {
       for (const pr of prResult.items) {
         const tm =
