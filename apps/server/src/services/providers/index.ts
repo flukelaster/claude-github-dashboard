@@ -1,7 +1,8 @@
 import type { GitProvider, ProviderName } from "./types.js";
 import { githubProvider } from "./github.js";
+import { gitlabProvider } from "./gitlab.js";
 
-const ALL_PROVIDERS: readonly GitProvider[] = [githubProvider] as const;
+const ALL_PROVIDERS: readonly GitProvider[] = [githubProvider, gitlabProvider] as const;
 
 export function getProvider(name: ProviderName): GitProvider {
   const p = ALL_PROVIDERS.find((x) => x.name === name);
