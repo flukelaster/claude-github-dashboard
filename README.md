@@ -4,7 +4,7 @@
 
 # Claude × GitHub Dashboard
 
-A local-only dashboard that cross-references **Claude Code usage** (tokens, cost, sessions) with **GitHub output** (lines of code, pull requests, commits, languages) to measure **output per Claude dollar** — the productivity signal behind the raw volume of tokens consumed.
+A local-only dashboard that cross-references **Claude Code usage** (tokens, cost, sessions) with **remote git output** from **GitHub and GitLab** (lines of code, pull requests / merge requests, commits, languages) to measure **output per Claude dollar** — the productivity signal behind the raw volume of tokens consumed.
 
 <p align="center">
   <img src="docs/screenshots/01-overview-dark.png" alt="Overview (dark)" width="100%" />
@@ -67,7 +67,8 @@ This dashboard joins the two signals and surfaces the numbers behind the intuiti
 | Routing | [React Router v7](https://reactrouter.com) |
 | Backend | [Hono](https://hono.dev) on Node |
 | ORM / DB | [Drizzle](https://orm.drizzle.team) with [`better-sqlite3`](https://github.com/WiseLibs/better-sqlite3) |
-| GitHub client | `@octokit/graphql`, `@octokit/rest` |
+| GitHub client | [`@octokit/graphql`, `@octokit/rest`](https://github.com/octokit) |
+| GitLab client | [`@gitbeaker/rest`](https://github.com/jdalrymple/gitbeaker) |
 | Git client | [`simple-git`](https://github.com/steveukx/git-js) |
 | Secret storage | macOS Keychain via [`keytar`](https://github.com/atom/node-keytar) |
 
@@ -90,15 +91,29 @@ pnpm dev
 
 Open [http://localhost:5173](http://localhost:5173). The dashboard synchronises on boot.
 
-### Configuring a GitHub token
+### Configuring a remote provider
 
-For authoritative commit history (the pushed state), pull request metadata, and language statistics:
+Two providers are supported: **GitHub** and **GitLab** (gitlab.com including nested subgroups). Either or both can be enabled — each is optional, and local git fallback keeps working without any tokens.
 
-1. Generate a personal access token at [github.com/settings/tokens](https://github.com/settings/tokens). A classic token with the `repo` scope is sufficient; a fine-grained token scoped to specific repositories is preferred.
-2. Paste the token into **Settings → Personal access token** in the dashboard.
-3. Click **Sync**.
+**GitHub** — classic (`ghp_…`) or fine-grained (`github_pat_…`) PAT with `repo` scope. Generate at [github.com/settings/tokens](https://github.com/settings/tokens).
 
-The token is written to the macOS Keychain via `keytar`; it is never stored in `localStorage`, the SQLite database, or environment variables.
+**GitLab** — personal access token (`glpat-…`) with `api` + `read_repository` scopes. Generate at [gitlab.com/-/user_settings/personal_access_tokens](https://gitlab.com/-/user_settings/personal_access_tokens).
+
+1. Open **Settings → Remote git providers** in the dashboard.
+2. Switch to the **GitHub** or **GitLab** tab and paste the token. Click **Save**.
+3. Click **Test connection** to confirm auth.
+4. Run **Sync** from the header.
+
+Tokens are written to the macOS Keychain via `keytar` under the keys `github_pat` and `gitlab_pat`; they are never stored in `localStorage`, the SQLite database, or environment variables.
+
+### Tracked Repositories
+
+All repositories discovered through Claude Code session working directories appear under **Settings → Which repos to sync**. Each has a toggle:
+
+- **Enabled** (default) — included in the next provider sync (commits, PRs/MRs, languages refresh from the remote).
+- **Disabled** — skipped during provider sync; existing data and local git fallback are preserved.
+
+You can also **Add repository** manually by pasting a GitHub or GitLab URL — the provider is inferred from the URL format (`github.com/owner/repo`, `gitlab.com/group/subgroup/project`, SSH form, etc.).
 
 ---
 
@@ -196,7 +211,7 @@ Keychain-backed GitHub token management, sync state, last-run timestamp and erro
 
 ![Settings](docs/screenshots/11-settings.png)
 
-The sync orchestrator runs Claude JSONL → git → GitHub → correlation in sequence, with live progress via Server-Sent Events:
+The sync orchestrator runs Claude JSONL → git → active providers (GitHub / GitLab) → correlation in sequence, with live progress via Server-Sent Events:
 
 <p align="center">
   <img src="docs/screenshots/13-sync-sse.gif" alt="Sync in progress" width="720" />
@@ -226,7 +241,7 @@ The dashboard is designed dark-first. The Vercel shadow-as-border system ports c
 
 1. The **Claude parser** streams `~/.claude/projects/**/*.jsonl` with byte-offset incremental sync and deduplicates events by `message.id` to correctly handle session resume and replay. It writes per-message and per-session aggregates.
 2. The **git indexer** discovers repositories from session working directories, resolves `.git` roots (including worktrees and submodules), and extracts commits with additions, deletions, file lists, and co-authors.
-3. The **GitHub sync** step — active only when a token is configured — replaces local commit data with authoritative GraphQL results and fetches pull requests plus per-repository Linguist statistics. Per-repository fallback: repositories the token cannot resolve (e.g., private organisation repositories without SSO authorisation) retain their local git data.
+3. The **Provider sync** step — active for every provider whose token is configured (GitHub, GitLab) — iterates the tracked repos for that provider and replaces local commit data with authoritative API results, fetches pull requests / merge requests, and refreshes per-repository language statistics. Per-repository fallback: repositories the token cannot resolve (SSO-gated orgs, renamed paths, revoked access) retain their local git data. Repos with `sync_enabled = 0` are skipped entirely.
 4. The **correlation engine** scores every (session × commit) pair:
    - `Co-Authored-By: Claude` trailer: +50
    - File overlap ≥ 50%: +30; 20–50%: +15
@@ -251,7 +266,12 @@ performance-tracking/
 │   │   │   ├── services/
 │   │   │   │   ├── claude-parser.ts    JSONL ingest, dedupe
 │   │   │   │   ├── git-indexer.ts      simple-git + discovery
-│   │   │   │   ├── github-client.ts    GraphQL commits, PRs, languages
+│   │   │   │   ├── providers/          Multi-provider abstraction
+│   │   │   │   │   ├── types.ts        GitProvider interface + DTOs
+│   │   │   │   │   ├── github.ts       Octokit + GraphQL impl
+│   │   │   │   │   ├── gitlab.ts       Gitbeaker REST impl
+│   │   │   │   │   └── index.ts        Registry + activeProviders()
+│   │   │   │   ├── provider-sync.ts    Provider-agnostic sync loop
 │   │   │   │   ├── correlation.ts      Scoring, AI-assist detection
 │   │   │   │   ├── analytics.ts        Query builders
 │   │   │   │   ├── sync.ts             Orchestrator + SSE
@@ -340,7 +360,9 @@ All processing is local. The only outbound traffic is to the GitHub API, and onl
 
 AI-assist detection combines a deterministic signal (the `Co-Authored-By: Claude` commit trailer) with heuristics (file overlap, time window, branch match). The default threshold (score ≥ 40) favours precision over recall.
 
-For repositories pulled via the GitHub API, per-commit file lists are not currently fetched — an optimisation that avoids one rate-limit point per commit. Correlation for those repositories therefore falls back to trailer, time, and branch signals. Repositories served from local git retain the full signal set.
+For repositories pulled via the GitHub or GitLab API, per-commit file lists are not currently fetched — an optimisation that avoids one rate-limit point per commit. Correlation for those repositories therefore falls back to trailer, time, and branch signals. Repositories served from local git retain the full signal set.
+
+GitLab-specific note: the merge-request list endpoint omits diff stats, so LOC counts for MRs are sourced from local git commits linked to the MR rather than the REST response. Fetching per-MR stats individually (N+1) is avoided by default.
 
 Confidence tiers are exposed in the UI:
 
@@ -366,16 +388,21 @@ Path handling is cross-platform: both Unix `/` and Windows `\` separators are ac
 - **Single-user by design.** One SQLite file, no authentication layer.
 - **Equivalent cost, not actual spend.** Max and Pro subscribers pay a flat fee; the dashboard reports pay-as-you-go equivalent.
 - **GitHub rate limits.** GraphQL is capped at 5,000 points per hour. Sync pauses cleanly with a surfaced error when the budget is depleted.
-- **Unpushed commits** are visible only when no GitHub token is configured and the local git fallback is active.
+- **GitLab.** Only `gitlab.com` is currently supported — self-hosted instances require a host-field addition (tracked on the roadmap).
+- **Unpushed commits** are visible only when no provider token is configured and the local git fallback is active.
 
 ---
 
 ## Roadmap
 
+- [x] PDF export
+- [x] Multi-provider support (GitHub + GitLab)
+- [x] Per-repository sync selection
 - [ ] Surface SSE sync progress in the UI (endpoint present, consumer pending)
-- [ ] PDF export
-- [ ] Per-commit file-list fetch for GitHub repositories (opt-in, higher correlation accuracy)
-- [ ] Multi-account GitHub support
+- [ ] Per-commit file-list fetch for provider APIs (opt-in, higher correlation accuracy)
+- [ ] Self-hosted GitLab host field
+- [ ] Bitbucket / Gitea / Forgejo providers
+- [ ] Multi-account support per provider
 - [ ] Per-page chart palette adaptation to system-level colour scheme changes
 - [ ] Tauri packaging (single binary, no terminal invocation)
 
