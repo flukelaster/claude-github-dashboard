@@ -1,11 +1,10 @@
 import { Hono } from "hono";
-import { graphql } from "@octokit/graphql";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { scrubSecrets } from "@cgd/shared";
 import { db } from "../db/client.js";
 import { settings } from "../db/schema.js";
 import { deleteSecret, getBackend, getSecret, setSecret } from "../services/keychain.js";
+import { getAllProviders, getProvider, type ProviderName } from "../services/providers/index.js";
 
 const ROI_KEY = "roi_config";
 
@@ -23,8 +22,88 @@ const ROI_DEFAULT: RoiConfig = { role: "senior", hourlyRate: 825, locPerHour: 70
 
 export const settingsRoutes = new Hono();
 
+// ─── Provider token regexes ───────────────────────────────────────────────────
+const TOKEN_REGEX: Record<ProviderName, RegExp> = {
+  github: /^(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,255})$/,
+  gitlab: /^glpat-[A-Za-z0-9_-]{20,}$/,
+};
+
+const KEYCHAIN_KEY: Record<ProviderName, string> = {
+  github: "github_pat",
+  gitlab: "gitlab_pat",
+};
+
+const PROVIDER_LABEL: Record<ProviderName, string> = {
+  github: "GitHub",
+  gitlab: "GitLab",
+};
+
+function providerTokenInput(name: ProviderName) {
+  return z.object({
+    token: z
+      .string()
+      .regex(TOKEN_REGEX[name], `expected a valid ${PROVIDER_LABEL[name]} personal access token`),
+  });
+}
+
+function isProviderName(v: string): v is ProviderName {
+  return v === "github" || v === "gitlab";
+}
+
+// ─── New provider-aware endpoints ─────────────────────────────────────────────
+settingsRoutes.get("/providers", async (c) => {
+  const backend = await getBackend();
+  const out = [];
+  for (const p of getAllProviders()) {
+    const token = await getSecret(KEYCHAIN_KEY[p.name]);
+    out.push({
+      name: p.name,
+      label: PROVIDER_LABEL[p.name],
+      hasToken: !!token,
+      preview: token ? `…${token.slice(-4)}` : null,
+    });
+  }
+  return c.json({ providers: out, backend });
+});
+
+settingsRoutes.get("/providers/:name/token", async (c) => {
+  const name = c.req.param("name");
+  if (!isProviderName(name)) return c.json({ error: "unknown provider" }, 404);
+  const t = await getSecret(KEYCHAIN_KEY[name]);
+  return c.json({
+    hasToken: !!t,
+    preview: t ? `…${t.slice(-4)}` : null,
+  });
+});
+
+settingsRoutes.post("/providers/:name/token", async (c) => {
+  const name = c.req.param("name");
+  if (!isProviderName(name)) return c.json({ error: "unknown provider" }, 404);
+  const body = await c.req.json().catch(() => ({}));
+  const parsed = providerTokenInput(name).safeParse(body);
+  if (!parsed.success) return c.json({ error: parsed.error.issues[0]?.message ?? "invalid token" }, 400);
+  await setSecret(KEYCHAIN_KEY[name], parsed.data.token);
+  return c.json({ ok: true });
+});
+
+settingsRoutes.delete("/providers/:name/token", async (c) => {
+  const name = c.req.param("name");
+  if (!isProviderName(name)) return c.json({ error: "unknown provider" }, 404);
+  await deleteSecret(KEYCHAIN_KEY[name]);
+  return c.json({ ok: true });
+});
+
+settingsRoutes.get("/providers/:name/test", async (c) => {
+  const name = c.req.param("name");
+  if (!isProviderName(name)) return c.json({ error: "unknown provider" }, 404);
+  const provider = getProvider(name);
+  const result = await provider.testAuth();
+  return c.json(result);
+});
+
+// ─── Legacy GitHub endpoints (kept as aliases for the current UI) ─────────────
 settingsRoutes.get("/github/token", async (c) => {
-  const t = await getSecret("github_pat");
+  const t = await getSecret(KEYCHAIN_KEY.github);
   const backend = await getBackend();
   return c.json({
     hasToken: !!t,
@@ -33,29 +112,33 @@ settingsRoutes.get("/github/token", async (c) => {
   });
 });
 
-// Accept classic (ghp_…) and fine-grained (github_pat_…) tokens.
-const tokenInput = z.object({
-  token: z
-    .string()
-    .regex(
-      /^(ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20,255})$/,
-      "expected ghp_… (40 chars) or github_pat_…"
-    ),
-});
-
 settingsRoutes.post("/github/token", async (c) => {
   const body = await c.req.json().catch(() => ({}));
-  const parsed = tokenInput.safeParse(body);
+  const parsed = providerTokenInput("github").safeParse(body);
   if (!parsed.success) return c.json({ error: "invalid token" }, 400);
-  await setSecret("github_pat", parsed.data.token);
+  await setSecret(KEYCHAIN_KEY.github, parsed.data.token);
   return c.json({ ok: true });
 });
 
 settingsRoutes.delete("/github/token", async (c) => {
-  await deleteSecret("github_pat");
+  await deleteSecret(KEYCHAIN_KEY.github);
   return c.json({ ok: true });
 });
 
+settingsRoutes.get("/github/test", async (c) => {
+  const result = await getProvider("github").testAuth();
+  if (!result.ok) return c.json({ ok: false, error: result.error ?? "auth failed" }, 200);
+  return c.json({
+    ok: true,
+    login: result.user ?? null,
+    name: null,
+    avatarUrl: null,
+    profileUrl: null,
+    rateLimit: result.rateLimit ?? null,
+  });
+});
+
+// ─── ROI config ───────────────────────────────────────────────────────────────
 settingsRoutes.get("/roi", async (c) => {
   const row = db.select().from(settings).where(eq(settings.key, ROI_KEY)).get();
   if (!row) return c.json(ROI_DEFAULT);
@@ -75,31 +158,4 @@ settingsRoutes.post("/roi", async (c) => {
     .onConflictDoUpdate({ target: settings.key, set: { value: JSON.stringify(parsed.data) } })
     .run();
   return c.json({ ok: true });
-});
-
-interface ViewerResponse {
-  viewer: { login: string; name: string | null; avatarUrl: string; url: string };
-  rateLimit: { remaining: number; limit: number; resetAt: string };
-}
-
-settingsRoutes.get("/github/test", async (c) => {
-  const token = await getSecret("github_pat");
-  if (!token) return c.json({ ok: false, error: "no token configured" }, 400);
-  try {
-    const gh = graphql.defaults({ headers: { authorization: `Bearer ${token}` } });
-    const resp = await gh<ViewerResponse>(
-      `query { viewer { login name avatarUrl url } rateLimit { remaining limit resetAt } }`
-    );
-    return c.json({
-      ok: true,
-      login: resp.viewer.login,
-      name: resp.viewer.name,
-      avatarUrl: resp.viewer.avatarUrl,
-      profileUrl: resp.viewer.url,
-      rateLimit: resp.rateLimit,
-    });
-  } catch (e) {
-    const raw = e instanceof Error ? e.message : String(e);
-    return c.json({ ok: false, error: scrubSecrets(raw) }, 200);
-  }
 });
