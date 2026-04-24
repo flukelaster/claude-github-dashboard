@@ -13,7 +13,7 @@ import {
   getSessions,
 } from "../services/analytics.js";
 import { getStatus, runFullSync, subscribe, type SyncEvent } from "../services/sync.js";
-import { hasGitHubToken } from "../services/github-client.js";
+import { getProvider } from "../services/providers/index.js";
 import { settingsRoutes } from "./settings.js";
 
 export const api = new Hono();
@@ -91,7 +91,7 @@ api.get("/repos/:id", async (c) => {
 });
 
 api.get("/github/status", async (c) => {
-  return c.json({ hasToken: await hasGitHubToken() });
+  return c.json({ hasToken: await getProvider("github").hasToken() });
 });
 
 api.post("/sync", async (c) => {

@@ -1,7 +1,8 @@
 import { scrubSecrets, type SyncStatus } from "@cgd/shared";
 import { syncClaude } from "./claude-parser.js";
 import { syncGit } from "./git-indexer.js";
-import { hasGitHubToken, syncGitHub } from "./github-client.js";
+import { getActiveProviders } from "./providers/index.js";
+import { syncProvider } from "./provider-sync.js";
 import { syncLanguageLoc } from "./language-loc.js";
 import { correlate } from "./correlation.js";
 
@@ -69,9 +70,9 @@ export async function runFullSync(): Promise<SyncStatus> {
     emit({ type: "error", source: "claude_jsonl", at: new Date().toISOString(), message: m });
   }
 
-  // 2. Git indexer — always runs (fallback for repos GitHub can't see).
-  //    GitHub sync (step 3) overwrites local commits per-repo when it succeeds.
-  const githubActive = await hasGitHubToken();
+  // 2. Git indexer — always runs (fallback for repos remote provider can't see).
+  //    Provider sync (step 3) overwrites local commits per-repo when it succeeds.
+  const activeProviders = await getActiveProviders();
   try {
     status.source = "git";
     emit({ type: "start", source: "git", at: new Date().toISOString() });
@@ -93,37 +94,39 @@ export async function runFullSync(): Promise<SyncStatus> {
     emit({ type: "error", source: "git", at: new Date().toISOString(), message: m });
   }
 
-  // 3. GitHub — authoritative when token set (commits + PRs via GraphQL)
-  if (githubActive) {
-    try {
-      status.source = "github";
-      emit({ type: "start", source: "github", at: new Date().toISOString() });
-      const gh = await syncGitHub({ sinceDays: 90 });
-      emit({
-        type: "done",
-        source: "github",
-        at: new Date().toISOString(),
-        stats: {
-          reposSynced: gh.reposSynced,
-          prsUpserted: gh.prsUpserted,
-          commitsUpserted: gh.commitsUpserted,
-          languagesUpserted: gh.languagesUpserted,
-          rateLimitRemaining: gh.rateLimitRemaining ?? -1,
-          errors: gh.errors.length,
-          durationMs: gh.durationMs,
-        },
-      });
-      if (gh.errors.length) errors.push(`github: ${gh.errors.slice(0, 3).join("; ")}`);
-    } catch (e) {
-      const m = e instanceof Error ? e.message : String(e);
-      emit({ type: "error", source: "github", at: new Date().toISOString(), message: m });
-    }
-  } else {
+  // 3. Remote providers — authoritative when token set (commits + PRs via provider API)
+  if (activeProviders.length === 0) {
     emit({
       type: "progress",
-      source: "github",
-      message: "skipped — no token configured (Settings → GitHub)",
+      source: "providers",
+      message: "skipped — no provider tokens configured (Settings → Providers)",
     });
+  } else {
+    for (const p of activeProviders) {
+      try {
+        status.source = p.name;
+        emit({ type: "start", source: p.name, at: new Date().toISOString() });
+        const r = await syncProvider(p, { sinceDays: 90 });
+        emit({
+          type: "done",
+          source: p.name,
+          at: new Date().toISOString(),
+          stats: {
+            reposSynced: r.reposSynced,
+            prsUpserted: r.prsUpserted,
+            commitsUpserted: r.commitsUpserted,
+            languagesUpserted: r.languagesUpserted,
+            rateLimitRemaining: r.rateLimitRemaining ?? -1,
+            errors: r.errors.length,
+            durationMs: r.durationMs,
+          },
+        });
+        if (r.errors.length) errors.push(`${p.name}: ${r.errors.slice(0, 3).join("; ")}`);
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        emit({ type: "error", source: p.name, at: new Date().toISOString(), message: m });
+      }
+    }
   }
 
   // 4. Language LOC — walk local filesystem, count lines per language.
